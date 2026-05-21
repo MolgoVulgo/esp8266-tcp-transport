@@ -1,7 +1,6 @@
 #include "tcp_transport.h"
 
 #include <errno.h>
-#include <fcntl.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
@@ -13,7 +12,7 @@
 #include "lwip/sockets.h"
 
 #ifndef TCP_NETWORK_TASK_STACK_SIZE
-#define TCP_NETWORK_TASK_STACK_SIZE 3072U
+#define TCP_NETWORK_TASK_STACK_SIZE 512U
 #endif
 
 #ifndef TCP_NETWORK_TASK_PRIORITY
@@ -24,8 +23,16 @@
 #define TCP_LISTEN_BACKLOG          TCP_SERVER_MAX_CLIENTS
 #endif
 
+#ifndef TCP_ENABLE_REUSEADDR
+#if defined(SO_REUSE) && SO_REUSE
+#define TCP_ENABLE_REUSEADDR        1
+#else
+#define TCP_ENABLE_REUSEADDR        0
+#endif
+#endif
+
 #ifndef pdMS_TO_TICKS
-#define pdMS_TO_TICKS(ms) ((TickType_t)(((ms) + portTICK_PERIOD_MS - 1U) / portTICK_PERIOD_MS))
+#define pdMS_TO_TICKS(ms) ((portTickType)(((ms) + portTICK_RATE_MS - 1U) / portTICK_RATE_MS))
 #endif
 
 #ifndef TCP_TRANSPORT_LOGI
@@ -41,7 +48,7 @@ typedef struct {
     uint16_t port;
     uint8_t max_clients;
     tcp_server_callbacks_t callbacks;
-    TaskHandle_t task_handle;
+    xTaskHandle task_handle;
     volatile bool running;
     bool started;
     tcp_conn_t slots[TCP_SERVER_MAX_CLIENTS];
@@ -53,7 +60,7 @@ static tcp_server_t s_server = {
 
 static uint32_t tcp_now_ms(void)
 {
-    return (uint32_t)(xTaskGetTickCount() * portTICK_PERIOD_MS);
+    return (uint32_t)(xTaskGetTickCount() * portTICK_RATE_MS);
 }
 
 static bool tcp_is_wouldblock(int err)
@@ -136,12 +143,9 @@ static tcp_conn_t *tcp_find_free_slot(void)
 
 static int tcp_set_nonblocking(int fd)
 {
-    int flags = fcntl(fd, F_GETFL, 0);
-    if (flags < 0) {
-        return -1;
-    }
+    unsigned long nonblocking = 1;
 
-    return fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+    return ioctlsocket(fd, FIONBIO, &nonblocking);
 }
 
 static void tcp_close_fd(int *fd)
@@ -425,10 +429,12 @@ int tcp_server_start(uint16_t port, uint8_t max_clients,
         return TCP_TRANSPORT_ERR_SOCKET;
     }
 
+#if TCP_ENABLE_REUSEADDR
     int reuse = 1;
     if (setsockopt(listen_fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse)) < 0) {
         TCP_TRANSPORT_LOGE("setsockopt SO_REUSEADDR failed err=%d", errno);
     }
+#endif
 
     struct sockaddr_in addr;
     memset(&addr, 0, sizeof(addr));
@@ -460,12 +466,12 @@ int tcp_server_start(uint16_t port, uint8_t max_clients,
     s_server.running = true;
     s_server.started = true;
 
-    BaseType_t task_ret = xTaskCreate(tcp_network_task,
-                                      "tcp_transport",
-                                      TCP_NETWORK_TASK_STACK_SIZE,
-                                      NULL,
-                                      TCP_NETWORK_TASK_PRIORITY,
-                                      &s_server.task_handle);
+    portBASE_TYPE task_ret = xTaskCreate(tcp_network_task,
+                                         "tcp_transport",
+                                         TCP_NETWORK_TASK_STACK_SIZE,
+                                         NULL,
+                                         TCP_NETWORK_TASK_PRIORITY,
+                                         &s_server.task_handle);
     if (task_ret != pdPASS) {
         TCP_TRANSPORT_LOGE("task create failed");
         s_server.running = false;
@@ -548,7 +554,7 @@ size_t tcp_send(tcp_conn_t *conn, const uint8_t *buf, size_t len)
     return accepted;
 }
 
-void tcp_close(tcp_conn_t *conn)
+void tcp_transport_close(tcp_conn_t *conn)
 {
     if (!tcp_is_network_task() || !tcp_conn_belongs_to_server(conn)) {
         return;

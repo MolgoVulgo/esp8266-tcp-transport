@@ -65,7 +65,12 @@ int tcp_server_start(uint16_t port, uint8_t max_clients,
 void tcp_server_stop(void);
 
 size_t tcp_send(tcp_conn_t *conn, const uint8_t *buf, size_t len);
-void tcp_close(tcp_conn_t *conn);
+void tcp_transport_close(tcp_conn_t *conn);
+
+static inline void tcp_close(tcp_conn_t *conn)
+{
+    tcp_transport_close(conn);
+}
 
 #ifdef __cplusplus
 }

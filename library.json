@@ -1,0 +1,51 @@
+{
+  "$schema": "https://raw.githubusercontent.com/platformio/platformio-core/develop/platformio/assets/schema/library.json",
+  "name": "esp8266-tcp-transport",
+  "version": "0.1.0",
+  "description": "Bounded TCP byte-stream transport for ESP8266 RTOS SDK projects.",
+  "keywords": [
+    "esp8266",
+    "tcp",
+    "transport",
+    "rtos",
+    "freertos",
+    "lwip"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/MolgoVulgo/esp8266-tcp-transport.git"
+  },
+  "authors": [
+    {
+      "name": "MolgoVulgo",
+      "url": "https://github.com/MolgoVulgo",
+      "maintainer": true
+    }
+  ],
+  "frameworks": [
+    "esp8266-rtos-sdk"
+  ],
+  "platforms": [
+    "espressif8266"
+  ],
+  "headers": [
+    "tcp_transport.h"
+  ],
+  "examples": [
+    {
+      "name": "TCP echo server",
+      "base": "examples/tcp_echo_server",
+      "files": [
+        "platformio.ini",
+        "README.md",
+        "src/main.c",
+        "tools/tcp_echo_client.py"
+      ]
+    }
+  ],
+  "build": {
+    "includeDir": "include",
+    "srcDir": "src",
+    "libArchive": false
+  }
+}
