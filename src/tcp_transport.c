@@ -85,6 +85,7 @@ static void tcp_reset_slot(tcp_conn_t *conn)
     conn->tx_offset = 0;
     conn->last_activity_ms = 0;
     conn->state = TCP_SLOT_FREE;
+    conn->close_after_drain = false;
 }
 
 static void tcp_reset_all_slots(void)
@@ -192,6 +193,16 @@ static void tcp_fail_slot(tcp_conn_t *conn, int err)
     tcp_close_slot(conn, true);
 }
 
+static void tcp_mark_tx_empty(tcp_conn_t *conn)
+{
+    conn->tx_len = 0;
+    conn->tx_offset = 0;
+
+    if (conn->close_after_drain) {
+        tcp_close_slot(conn, true);
+    }
+}
+
 static void tcp_handle_accept(void)
 {
     struct sockaddr_in client_addr;
@@ -260,8 +271,7 @@ static void tcp_handle_rx(tcp_conn_t *conn)
 static void tcp_handle_tx(tcp_conn_t *conn)
 {
     if (conn->tx_offset >= conn->tx_len) {
-        conn->tx_len = 0;
-        conn->tx_offset = 0;
+        tcp_mark_tx_empty(conn);
         return;
     }
 
@@ -274,8 +284,7 @@ static void tcp_handle_tx(tcp_conn_t *conn)
         conn->last_activity_ms = tcp_now_ms();
 
         if (conn->tx_offset == conn->tx_len) {
-            conn->tx_len = 0;
-            conn->tx_offset = 0;
+            tcp_mark_tx_empty(conn);
         }
         return;
     }
@@ -338,7 +347,9 @@ static void tcp_network_task(void *arg)
                 continue;
             }
 
-            FD_SET(conn->fd, &rfds);
+            if (!conn->close_after_drain) {
+                FD_SET(conn->fd, &rfds);
+            }
             if (conn->tx_offset < conn->tx_len) {
                 FD_SET(conn->fd, &wfds);
             }
@@ -515,6 +526,7 @@ size_t tcp_send(tcp_conn_t *conn, const uint8_t *buf, size_t len)
         || !tcp_conn_belongs_to_server(conn)
         || buf == NULL
         || len == 0
+        || conn->close_after_drain
         || conn->state != TCP_SLOT_USED) {
         return 0;
     }
@@ -552,6 +564,23 @@ size_t tcp_send(tcp_conn_t *conn, const uint8_t *buf, size_t len)
     }
 
     return accepted;
+}
+
+int tcp_close_after_drain(tcp_conn_t *conn)
+{
+    if (!tcp_is_network_task()
+        || !tcp_conn_belongs_to_server(conn)
+        || conn->state != TCP_SLOT_USED) {
+        return TCP_TRANSPORT_ERR_INVALID_ARG;
+    }
+
+    if (conn->tx_offset >= conn->tx_len) {
+        tcp_mark_tx_empty(conn);
+        return TCP_TRANSPORT_OK;
+    }
+
+    conn->close_after_drain = true;
+    return TCP_TRANSPORT_OK;
 }
 
 void tcp_transport_close(tcp_conn_t *conn)

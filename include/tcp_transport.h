@@ -1,6 +1,7 @@
 #ifndef TCP_TRANSPORT_H
 #define TCP_TRANSPORT_H
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -51,6 +52,7 @@ typedef struct tcp_conn {
 
     uint32_t last_activity_ms;
     tcp_slot_state_t state;
+    bool close_after_drain;
 } tcp_conn_t;
 
 typedef struct {
@@ -65,6 +67,7 @@ int tcp_server_start(uint16_t port, uint8_t max_clients,
 void tcp_server_stop(void);
 
 size_t tcp_send(tcp_conn_t *conn, const uint8_t *buf, size_t len);
+int tcp_close_after_drain(tcp_conn_t *conn);
 void tcp_transport_close(tcp_conn_t *conn);
 
 static inline void tcp_close(tcp_conn_t *conn)

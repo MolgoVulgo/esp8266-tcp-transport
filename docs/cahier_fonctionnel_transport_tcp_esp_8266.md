@@ -207,6 +207,7 @@ Les envois partiels sont repris automatiquement lors des passages suivants dans 
 ## 14. Fermeture des connexions
 
 La fonction `tcp_close()` doit permettre de fermer proprement une connexion active.
+La fonction `tcp_close_after_drain()` doit permettre de demander une fermeture serveur après émission complète des octets déjà acceptés dans le buffer TX.
 
 La fermeture doit :
 
@@ -215,6 +216,15 @@ La fermeture doit :
 - appeler le callback de fermeture si applicable ;
 - remettre le slot dans un état réutilisable ;
 - éviter les doubles fermetures.
+
+### Fermeture après vidage TX
+
+Le transport expose `tcp_close_after_drain()` pour permettre à une couche supérieure de demander la fermeture serveur après émission complète des données déjà bufferisées.
+
+Si le buffer TX est vide, la fermeture est immédiate.
+Si le buffer TX contient encore des données, le transport poursuit les envois partiels puis ferme automatiquement la connexion lorsque `tx_offset == tx_len`.
+
+Après appel à `tcp_close_after_drain()`, aucun nouvel envoi applicatif ne doit être accepté sur cette connexion.
 
 Une erreur réseau doit conduire à l’état `TCP_SLOT_ERROR`, puis à une fermeture contrôlée.
 
@@ -246,6 +256,7 @@ L’API publique minimale doit exposer :
 | `tcp_server_start(port, max_clients, callbacks)` | démarrer le serveur TCP |
 | `tcp_server_stop()` | arrêter le serveur et fermer les connexions |
 | `tcp_send(conn, buf, len)` | demander l’envoi non bloquant de données |
+| `tcp_close_after_drain(conn)` | fermer après vidage complet du TX déjà accepté |
 | `tcp_close(conn)` | demander la fermeture d’une connexion |
 
 `tcp_server_start()` doit :
@@ -270,6 +281,7 @@ L’API publique minimale doit exposer :
 La V1 impose que :
 
 - `tcp_send()` soit appelée uniquement depuis la task réseau ;
+- `tcp_close_after_drain()` soit appelée uniquement depuis la task réseau ;
 - `tcp_close()` soit appelée uniquement depuis la task réseau ;
 - les callbacks soient le point d’entrée normal vers ces fonctions ;
 - aucun appel cross-task ne soit garanti.
@@ -369,13 +381,15 @@ Le module est considéré conforme si :
 6. la réception déclenche `on_data` ;
 7. l’émission via `tcp_send()` ne bloque pas ;
 8. les envois partiels reprennent correctement ;
-9. `tcp_close()` libère correctement le slot ;
-10. `tcp_server_stop()` ferme tous les fd actifs ;
-11. aucun callback ne s’exécute hors task réseau ;
-12. aucune queue applicative n’est créée ;
-13. aucun traitement HTTP n’est présent dans le module ;
-14. le coût RAM est mesuré et documenté après compilation ;
-15. les erreurs socket sont loguées et conduisent à une fermeture contrôlée.
+9. `tcp_close_after_drain()` ferme immédiatement si le TX est vide ;
+10. `tcp_close_after_drain()` ferme après émission si le TX est non vide ;
+11. `tcp_close()` libère correctement le slot ;
+12. `tcp_server_stop()` ferme tous les fd actifs ;
+13. aucun callback ne s’exécute hors task réseau ;
+14. aucune queue applicative n’est créée ;
+15. aucun traitement HTTP n’est présent dans le module ;
+16. le coût RAM est mesuré et documenté après compilation ;
+17. les erreurs socket sont loguées et conduisent à une fermeture contrôlée.
 
 ## 24. Scénarios de test fonctionnel
 
@@ -435,6 +449,31 @@ Résultat attendu : slot réutilisable.
 
 Résultat attendu : tous les fd sont fermés, la task est arrêtée, les slots sont réinitialisés.
 
+### Scénario 8 — Fermeture après vidage TX vide
+
+- Connecter un client TCP.
+- Appeler `tcp_close_after_drain()` sans `tcp_send()`.
+- Vérifier l’appel unique à `on_close`.
+- Vérifier la libération du slot.
+
+Résultat attendu : fermeture immédiate et slot réutilisable.
+
+### Scénario 9 — Fermeture après vidage TX non vide
+
+- Depuis un callback, appeler `tcp_send(conn, "OK", 2)`.
+- Appeler ensuite `tcp_close_after_drain(conn)`.
+- Lire côté client jusqu’à EOF.
+
+Résultat attendu : le client reçoit exactement `OK`, puis la connexion est fermée côté serveur.
+
+### Scénario 10 — Envoi refusé après demande de drain-close
+
+- Appeler `tcp_send(conn, data1, len1)`.
+- Appeler `tcp_close_after_drain(conn)`.
+- Appeler `tcp_send(conn, data2, len2)`.
+
+Résultat attendu : le second `tcp_send()` retourne `0` et seules les données déjà acceptées avant drain-close sont envoyées.
+
 ## 25. Mesures obligatoires après implémentation
 
 Après compilation et test sur cible, documenter :
@@ -469,4 +508,3 @@ La brique attendue est un serveur TCP minimal, non bloquant, fondé sur une task
 Elle doit résoudre le problème de fond : fournir un socle réseau propre avant HTTP, sans exploser la RAM, sans exposer lwIP aux couches supérieures et sans enfermer les projets futurs dans une architecture réseau fragile.
 
 La V1 privilégie la stabilité, la lisibilité, la mesure mémoire et la maîtrise du comportement plutôt que la généralisation prématurée.
-

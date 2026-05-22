@@ -53,6 +53,32 @@
     - Appeler `tcp_server_start()` après un arrêt complet.
     - Attendu : serveur opérationnel sur le même port.
 
+11. Fermeture après vidage TX vide
+    - Connecter un client.
+    - Depuis `on_connect`, appeler `tcp_close_after_drain(conn)` sans `tcp_send()`.
+    - Attendu : connexion fermée proprement, slot libéré, `on_close` appelé une seule fois.
+
+12. Fermeture après vidage TX non vide
+    - Depuis `on_data`, appeler `tcp_send(conn, "OK", 2)` puis `tcp_close_after_drain(conn)`.
+    - Lire côté client jusqu’à EOF.
+    - Attendu : le client reçoit exactement `OK`, puis la connexion est fermée par le serveur.
+
+13. Envoi partiel puis fermeture après drain
+    - Forcer ou simuler un `send()` partiel sur une réponse déjà acceptée dans `tx_buf`.
+    - Appeler `tcp_close_after_drain(conn)`.
+    - Attendu : `tx_offset` progresse sur plusieurs passages, fermeture uniquement quand `tx_offset == tx_len`, aucun octet accepté n’est perdu.
+
+14. Envoi refusé après drain-close
+    - Appeler `tcp_send(conn, data1, len1)`.
+    - Appeler `tcp_close_after_drain(conn)`.
+    - Appeler `tcp_send(conn, data2, len2)`.
+    - Attendu : le second `tcp_send()` retourne `0`, seules les données de `data1` déjà acceptées sont envoyées.
+
+15. Erreur pendant drain-close
+    - Activer `close_after_drain` avec des données TX en attente.
+    - Couper brutalement le client avant lecture complète.
+    - Attendu : erreur socket loguée, `on_error` appelé, fd fermé, slot libéré, boucle réseau non bloquée.
+
 ## Points à observer
 
 - Logs de démarrage, arrêt, acceptation, rejet, erreurs socket et saturation TX.

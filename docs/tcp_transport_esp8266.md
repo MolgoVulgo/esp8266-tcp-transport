@@ -82,10 +82,19 @@ tx_offset == tx_len → buffer TX vide, reset tx_len/tx_offset à 0
 `tcp_send()` bufferise dans `tx_buf`, ne bloque pas, retourne le nombre d'octets acceptés.
 Les envois partiels sont repris à `tx_offset` sur le prochain passage dans la boucle `select()`.
 
+## Fermeture après vidage TX
+
+Le transport expose `tcp_close_after_drain()` pour permettre à une couche supérieure de demander la fermeture serveur après émission complète des données déjà bufferisées.
+
+Si le buffer TX est vide, la fermeture est immédiate.
+Si le buffer TX contient encore des données, le transport poursuit les envois partiels puis ferme automatiquement la connexion lorsque `tx_offset == tx_len`.
+
+Après appel à `tcp_close_after_drain()`, aucun nouvel envoi applicatif n'est accepté sur cette connexion : `tcp_send()` retourne `0`.
+
 ## Thread-safety
 
 Les callbacks tournent dans la task réseau.
-`tcp_send()` et `tcp_close()` sont appelables uniquement depuis cette task en V1.
+`tcp_send()`, `tcp_close_after_drain()` et `tcp_close()` sont appelables uniquement depuis cette task en V1.
 Les appels cross-task sont hors V1 — ils passeront par une queue de commandes FreeRTOS si le besoin apparaît.
 
 ## Contrat transport (interface minimale)
@@ -107,6 +116,7 @@ typedef struct {
 
     uint32_t last_activity_ms;
     tcp_slot_state_t state;
+    bool close_after_drain;
 } tcp_conn_t;
 
 /* callbacks globaux — définis une fois à l'init */
@@ -122,6 +132,7 @@ Opérations exposées :
 - `tcp_server_start(port, max_clients, callbacks)` — lie, écoute, configure non-bloquant, démarre la task interne
 - `tcp_server_stop()` — arrête la task, ferme tous les fds, libère les slots
 - `tcp_send(tcp_conn_t *conn, buf, len)` — bufferise, envoi non-bloquant, retourne octets acceptés
+- `tcp_close_after_drain(tcp_conn_t *conn)` — ferme après vidage complet du TX déjà accepté
 - `tcp_close(tcp_conn_t *conn)` — fermeture propre, libère le slot
 
 Coût mémoire du module : à mesurer après compilation avec les flags projet.

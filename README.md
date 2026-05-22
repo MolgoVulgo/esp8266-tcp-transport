@@ -39,12 +39,22 @@ int tcp_server_start(uint16_t port, uint8_t max_clients,
 void tcp_server_stop(void);
 
 size_t tcp_send(tcp_conn_t *conn, const uint8_t *buf, size_t len);
+int tcp_close_after_drain(tcp_conn_t *conn);
 void tcp_close(tcp_conn_t *conn);
 ```
 
-En V1, `tcp_send()` et `tcp_close()` sont a appeler depuis la task reseau, typiquement depuis `on_data`, `on_connect`, `on_close` ou `on_error`.
+En V1, `tcp_send()`, `tcp_close_after_drain()` et `tcp_close()` sont a appeler depuis la task reseau, typiquement depuis `on_data`, `on_connect`, `on_close` ou `on_error`.
 
 Les callbacks ne doivent pas bloquer et ne doivent pas effectuer de traitement long.
+
+## Fermeture apres vidage TX
+
+Le transport expose `tcp_close_after_drain()` pour permettre a une couche superieure de demander la fermeture serveur apres emission complete des donnees deja bufferisees.
+
+Si le buffer TX est vide, la fermeture est immediate.
+Si le buffer TX contient encore des donnees, le transport poursuit les envois partiels puis ferme automatiquement la connexion lorsque `tx_offset == tx_len`.
+
+Apres appel a `tcp_close_after_drain()`, aucun nouvel envoi applicatif n'est accepte sur cette connexion : `tcp_send()` retourne `0`.
 
 ## Exemple echo TCP
 
