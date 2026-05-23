@@ -254,7 +254,7 @@ L’API publique minimale doit exposer :
 | Fonction | Rôle fonctionnel |
 |---|---|
 | `tcp_server_start(port, max_clients, callbacks)` | démarrer le serveur TCP |
-| `tcp_server_stop()` | arrêter le serveur et fermer les connexions |
+| `tcp_server_stop()` | arrêter le serveur et fermer les connexions, retourner le statut d'arrêt |
 | `tcp_send(conn, buf, len)` | demander l’envoi non bloquant de données |
 | `tcp_close_after_drain(conn)` | fermer après vidage complet du TX déjà accepté |
 | `tcp_close(conn)` | demander la fermeture d’une connexion |
@@ -274,7 +274,8 @@ L’API publique minimale doit exposer :
 - fermer le socket serveur ;
 - fermer tous les sockets clients ;
 - libérer ou réinitialiser les slots ;
-- remettre le module dans un état redémarrable.
+- remettre le module dans un état redémarrable ;
+- retourner `TCP_TRANSPORT_OK` ou `TCP_TRANSPORT_ERR_STOP_TIMEOUT`.
 
 ## 17. Thread-safety V1
 

@@ -11,8 +11,15 @@
 #include "lwip/inet.h"
 #include "lwip/sockets.h"
 
+/* Stack size in FreeRTOS words. Default keeps room for application callbacks
+ * executed from the network task; reduce only after measuring the watermark.
+ */
 #ifndef TCP_NETWORK_TASK_STACK_SIZE
-#define TCP_NETWORK_TASK_STACK_SIZE 512U
+#define TCP_NETWORK_TASK_STACK_SIZE 1024U
+#endif
+
+#ifndef TCP_TRANSPORT_STACK_CHECK
+#define TCP_TRANSPORT_STACK_CHECK   0
 #endif
 
 #ifndef TCP_NETWORK_TASK_PRIORITY
@@ -116,21 +123,6 @@ static bool tcp_is_network_task(void)
         && xTaskGetCurrentTaskHandle() == s_server.task_handle;
 }
 
-static uint8_t tcp_count_used_slots(void)
-{
-    uint8_t used = 0;
-
-    for (uint8_t i = 0; i < s_server.max_clients; ++i) {
-        if (s_server.slots[i].state == TCP_SLOT_USED
-            || s_server.slots[i].state == TCP_SLOT_CLOSING
-            || s_server.slots[i].state == TCP_SLOT_ERROR) {
-            ++used;
-        }
-    }
-
-    return used;
-}
-
 static tcp_conn_t *tcp_find_free_slot(void)
 {
     for (uint8_t i = 0; i < s_server.max_clients; ++i) {
@@ -225,7 +217,7 @@ static void tcp_handle_accept(void)
     }
 
     tcp_conn_t *slot = tcp_find_free_slot();
-    if (slot == NULL || tcp_count_used_slots() >= s_server.max_clients) {
+    if (slot == NULL) {
         TCP_TRANSPORT_LOGI("client rejected: max clients reached");
         close(client_fd);
         return;
@@ -326,8 +318,19 @@ static void tcp_close_all_clients(void)
 static void tcp_network_task(void *arg)
 {
     (void)arg;
+#if TCP_TRANSPORT_STACK_CHECK
+    bool stack_warning_logged = false;
+#endif
 
     while (s_server.running) {
+#if TCP_TRANSPORT_STACK_CHECK
+        unsigned portBASE_TYPE watermark = uxTaskGetStackHighWaterMark(NULL);
+        if (!stack_warning_logged && watermark < 64U) {
+            TCP_TRANSPORT_LOGE("stack watermark low: %u words", (unsigned)watermark);
+            stack_warning_logged = true;
+        }
+#endif
+
         fd_set rfds;
         fd_set wfds;
         int max_fd = -1;
@@ -499,16 +502,16 @@ int tcp_server_start(uint16_t port, uint8_t max_clients,
     return TCP_TRANSPORT_OK;
 }
 
-void tcp_server_stop(void)
+int tcp_server_stop(void)
 {
     if (!s_server.started) {
-        return;
+        return TCP_TRANSPORT_OK;
     }
 
     s_server.running = false;
 
     if (tcp_is_network_task()) {
-        return;
+        return TCP_TRANSPORT_OK;
     }
 
     for (uint8_t i = 0; i < 10U && s_server.task_handle != NULL; ++i) {
@@ -517,7 +520,10 @@ void tcp_server_stop(void)
 
     if (s_server.task_handle != NULL) {
         TCP_TRANSPORT_LOGE("server stop timeout");
+        return TCP_TRANSPORT_ERR_STOP_TIMEOUT;
     }
+
+    return TCP_TRANSPORT_OK;
 }
 
 size_t tcp_send(tcp_conn_t *conn, const uint8_t *buf, size_t len)

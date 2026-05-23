@@ -34,7 +34,8 @@ typedef enum {
     TCP_TRANSPORT_ERR_BIND = -4,
     TCP_TRANSPORT_ERR_LISTEN = -5,
     TCP_TRANSPORT_ERR_NONBLOCK = -6,
-    TCP_TRANSPORT_ERR_TASK = -7
+    TCP_TRANSPORT_ERR_TASK = -7,
+    TCP_TRANSPORT_ERR_STOP_TIMEOUT = -8
 } tcp_transport_result_t;
 
 /* Exposed to callbacks for V1 diagnostics and bounded buffers.
@@ -55,6 +56,13 @@ typedef struct tcp_conn {
     bool close_after_drain;
 } tcp_conn_t;
 
+/* Callback contract:
+ * - on_connect is called when a client is accepted.
+ * - on_data is called for received data from the internal network task.
+ * - on_error is called for socket errors and is always followed by on_close.
+ * - on_close is called once for the final connection close after on_connect.
+ * Callbacks run in the internal network task and must not block.
+ */
 typedef struct {
     void (*on_connect)(tcp_conn_t *conn);
     void (*on_data)(tcp_conn_t *conn, const uint8_t *buf, size_t len);
@@ -64,7 +72,7 @@ typedef struct {
 
 int tcp_server_start(uint16_t port, uint8_t max_clients,
                      const tcp_server_callbacks_t *callbacks);
-void tcp_server_stop(void);
+int tcp_server_stop(void);
 
 size_t tcp_send(tcp_conn_t *conn, const uint8_t *buf, size_t len);
 int tcp_close_after_drain(tcp_conn_t *conn);

@@ -36,7 +36,7 @@ Include cote application :
 ```c
 int tcp_server_start(uint16_t port, uint8_t max_clients,
                      const tcp_server_callbacks_t *callbacks);
-void tcp_server_stop(void);
+int tcp_server_stop(void);
 
 size_t tcp_send(tcp_conn_t *conn, const uint8_t *buf, size_t len);
 int tcp_close_after_drain(tcp_conn_t *conn);
@@ -110,7 +110,7 @@ Par defaut :
 - `TCP_RX_BUFFER_SIZE = 512`
 - `TCP_TX_BUFFER_SIZE = 512`
 - `TCP_SELECT_TIMEOUT_MS = 100`
-- `TCP_NETWORK_TASK_STACK_SIZE = 512`
+- `TCP_NETWORK_TASK_STACK_SIZE = 1024`
 
 Le rapport de mesure cible est a remplir dans `docs/tcp_transport_memory_report.md` apres build et test sur materiel.
 

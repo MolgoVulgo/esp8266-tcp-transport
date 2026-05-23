@@ -130,7 +130,7 @@ typedef struct {
 
 Opérations exposées :
 - `tcp_server_start(port, max_clients, callbacks)` — lie, écoute, configure non-bloquant, démarre la task interne
-- `tcp_server_stop()` — arrête la task, ferme tous les fds, libère les slots
+- `tcp_server_stop()` — arrête la task, ferme tous les fds, libère les slots, retourne le statut d'arrêt
 - `tcp_send(tcp_conn_t *conn, buf, len)` — bufferise, envoi non-bloquant, retourne octets acceptés
 - `tcp_close_after_drain(tcp_conn_t *conn)` — ferme après vidage complet du TX déjà accepté
 - `tcp_close(tcp_conn_t *conn)` — fermeture propre, libère le slot
