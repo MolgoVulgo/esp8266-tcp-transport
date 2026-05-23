@@ -14,9 +14,9 @@ extern "C" {
 #define TCP_TX_BUFFER_SIZE          512U
 #define TCP_SELECT_TIMEOUT_MS       100U
 
-/* Disabled by default until a project-level value is chosen from measurements. */
+/* Idle timeout in milliseconds. Set to 0 to disable. */
 #ifndef TCP_IDLE_TIMEOUT_MS
-#define TCP_IDLE_TIMEOUT_MS         0U
+#define TCP_IDLE_TIMEOUT_MS         5000U
 #endif
 
 typedef enum {

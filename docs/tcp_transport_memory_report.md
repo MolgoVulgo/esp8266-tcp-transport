@@ -11,7 +11,7 @@
 | `TCP_TX_BUFFER_SIZE` | 512 octets |
 | `TCP_NETWORK_TASK_STACK_SIZE` | 1024 |
 | `TCP_SELECT_TIMEOUT_MS` | 100 ms |
-| `TCP_IDLE_TIMEOUT_MS` | 0 ms |
+| `TCP_IDLE_TIMEOUT_MS` | 5000 ms |
 
 ## Mesures firmware
 
@@ -38,5 +38,5 @@
 
 - Taille RX/TX finale : à décider.
 - Taille de stack finale : à décider.
-- Timeout d’inactivité par défaut : à décider.
+- Timeout d’inactivité par défaut : 5000 ms, désactivable avec `TCP_IDLE_TIMEOUT_MS=0`.
 - Niveau de logs permanent : à décider.

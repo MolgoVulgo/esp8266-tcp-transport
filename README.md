@@ -111,6 +111,7 @@ Par defaut :
 - `TCP_TX_BUFFER_SIZE = 512`
 - `TCP_SELECT_TIMEOUT_MS = 100`
 - `TCP_NETWORK_TASK_STACK_SIZE = 1024`
+- `TCP_IDLE_TIMEOUT_MS = 5000`
 
 Le rapport de mesure cible est a remplir dans `docs/tcp_transport_memory_report.md` apres build et test sur materiel.
 
