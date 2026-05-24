@@ -1,10 +1,55 @@
-# Rapport mémoire — Transport TCP ESP8266
+# Memory Report / Rapport memoire - ESP8266 TCP Transport
 
-## Configuration mesurée
+## English
 
-À remplir après compilation sur le projet cible.
+### Measured Configuration
 
-| Élément | Valeur |
+Fill this section after building the target firmware.
+
+| Item | Value |
+|---|---:|
+| `TCP_SERVER_MAX_CLIENTS` | 3 |
+| `TCP_RX_BUFFER_SIZE` | 512 bytes |
+| `TCP_TX_BUFFER_SIZE` | 512 bytes |
+| `TCP_NETWORK_TASK_STACK_SIZE` | 1024 |
+| `TCP_SELECT_TIMEOUT_MS` | 100 ms |
+| `TCP_IDLE_TIMEOUT_MS` | 5000 ms |
+
+### Firmware Measurements
+
+| Measurement | Value |
+|---|---:|
+| Firmware size before module | To measure |
+| Firmware size after module | To measure |
+| Firmware size difference | To measure |
+| Added static RAM | To measure |
+
+### Runtime Measurements
+
+| Scenario | Free heap | Network task stack | Observation |
+|---|---:|---:|---|
+| Server stopped | To measure | N/A |  |
+| Server started, 0 client | To measure | To measure |  |
+| Server started, 1 client | To measure | To measure |  |
+| Server started, 3 clients | To measure | To measure |  |
+| TX saturation | To measure | To measure |  |
+| 4th client rejection | To measure | To measure |  |
+| Abrupt client disconnect | To measure | To measure |  |
+
+### Decisions After Measurement
+
+- Final RX/TX buffer size: to decide.
+- Final network task stack size: to decide.
+- Default idle timeout: 5000 ms, disabled with `TCP_IDLE_TIMEOUT_MS=0`.
+- Permanent log level: to decide.
+
+## Francais
+
+### Configuration mesuree
+
+Remplir cette section apres compilation du firmware cible.
+
+| Element | Valeur |
 |---|---:|
 | `TCP_SERVER_MAX_CLIENTS` | 3 |
 | `TCP_RX_BUFFER_SIZE` | 512 octets |
@@ -13,30 +58,30 @@
 | `TCP_SELECT_TIMEOUT_MS` | 100 ms |
 | `TCP_IDLE_TIMEOUT_MS` | 5000 ms |
 
-## Mesures firmware
+### Mesures firmware
 
 | Mesure | Valeur |
 |---|---:|
-| Taille firmware avant module | À mesurer |
-| Taille firmware après module | À mesurer |
-| Différence firmware | À mesurer |
-| RAM statique ajoutée | À mesurer |
+| Taille firmware avant module | A mesurer |
+| Taille firmware apres module | A mesurer |
+| Difference de taille firmware | A mesurer |
+| RAM statique ajoutee | A mesurer |
 
-## Mesures runtime
+### Mesures runtime
 
-| Scénario | Heap libre | Stack task réseau | Observation |
+| Scenario | Heap libre | Stack task reseau | Observation |
 |---|---:|---:|---|
-| Serveur arrêté | À mesurer | N/A |  |
-| Serveur démarré, 0 client | À mesurer | À mesurer |  |
-| Serveur démarré, 1 client | À mesurer | À mesurer |  |
-| Serveur démarré, 3 clients | À mesurer | À mesurer |  |
-| Saturation TX | À mesurer | À mesurer |  |
-| Rejet 4e client | À mesurer | À mesurer |  |
-| Déconnexion brutale | À mesurer | À mesurer |  |
+| Serveur arrete | A mesurer | N/A |  |
+| Serveur demarre, 0 client | A mesurer | A mesurer |  |
+| Serveur demarre, 1 client | A mesurer | A mesurer |  |
+| Serveur demarre, 3 clients | A mesurer | A mesurer |  |
+| Saturation TX | A mesurer | A mesurer |  |
+| Rejet du 4e client | A mesurer | A mesurer |  |
+| Deconnexion brutale client | A mesurer | A mesurer |  |
 
-## Décisions après mesure
+### Decisions apres mesure
 
-- Taille RX/TX finale : à décider.
-- Taille de stack finale : à décider.
-- Timeout d’inactivité par défaut : 5000 ms, désactivable avec `TCP_IDLE_TIMEOUT_MS=0`.
-- Niveau de logs permanent : à décider.
+- Taille RX/TX finale : a decider.
+- Taille de stack finale de la task reseau : a decider.
+- Timeout d'inactivite par defaut : 5000 ms, desactivable avec `TCP_IDLE_TIMEOUT_MS=0`.
+- Niveau de logs permanent : a decider.

@@ -1,173 +1,360 @@
-# Transport TCP — ESP8266 RTOS SDK
+# Reference Documentation - ESP8266 RTOS SDK TCP Transport
 
-## Objectif réel
+## Purpose
 
-Ne pas créer directement un serveur web ESP8266 RTOS SDK.
-Avant http_server, il faut décider si le socle doit inclure une abstraction transport générique.
+`esp8266-tcp-transport` provides a TCP server transport component for ESP8266 RTOS SDK.
 
-## Décision d'architecture
+The module transports TCP byte streams. It does not know about HTTP, routes, sessions, web content or application logic.
 
-Le serveur web ne doit pas être la première brique réseau.
-La bonne pile logique est :
+Main goals:
 
-```
+- provide a minimal reusable TCP server;
+- keep RAM usage bounded;
+- avoid the one-task-per-client model;
+- hide lwIP from application layers;
+- expose a simple C API.
+
+## Architecture
+
+Target stack:
+
+```text
 lwIP / FreeRTOS
-    ↓
-transport générique TCP
-    ↓
-HTTP minimal
-    ↓
-services web/API
-    ↓
-logique métier projet
+    |
+tcp_transport
+    |
+optional protocol layer
+    |
+application
 ```
 
-## Choix de transport
+The transport uses one internal FreeRTOS task. This task monitors the server socket and client sockets with `select()`.
 
-Options évaluées :
+Sockets are non-blocking. Client connections are stored in static slots. Client events are processed sequentially inside the network task.
 
-| Option | Verdict | Raison |
-|---|---|---|
-| Sockets bloquants + task dédiée | Écarté | 1 task/client = 3×stack FreeRTOS ≈ 6–9 KB RAM, non scalable |
-| lwIP netconn | Écarté | Mailbox par connexion, blocage interne, overhead caché |
-| lwIP raw API | Écarté | Callbacks dans le thread lwIP, risque élevé, debugging douloureux |
-| **Sockets non-bloquants + select** | **Retenu** | Lisible, portable, 1 seule task, coût mémoire prévisible |
+## V1 Scope
 
-## Architecture retenue
+Included:
 
-Une task FreeRTOS dédiée exécute une boucle `select()` sur le socket serveur et les sockets clients actifs.
-Les événements clients sont traités séquentiellement dans cette task.
-Il n'y a pas de concurrence applicative entre clients dans la couche transport.
+- TCP server only;
+- non-blocking IPv4 TCP sockets;
+- one FreeRTOS network task;
+- `select()` loop;
+- static client slots;
+- static RX/TX buffers per client;
+- global callbacks;
+- buffered non-blocking transmit;
+- immediate close or close after TX drain;
+- configurable idle timeout;
+- logs for start, stop, connection, rejection, error, close and TX saturation.
 
-## Concurrence
+Out of scope:
 
-`TCP_SERVER_MAX_CLIENTS = 3` fixe l'allocation statique à la compilation.
-La valeur runtime `max_clients` passée à l'init doit être `<= TCP_SERVER_MAX_CLIENTS`.
-Chaque client occupe un slot statique.
+- HTTP;
+- TLS;
+- WebSocket;
+- UDP;
+- IPv6;
+- DNS;
+- authentication;
+- session management;
+- application queue;
+- guaranteed cross-task calls;
+- dynamic allocation per client.
 
-Dimensionnement RAM :
-- buffer RX par slot : 256–512 octets
-- buffer TX par slot : 256–512 octets
-- état par slot : fd, rx_len, tx_len, tx_offset, timestamp, state (~64 octets)
-- total slots 3 clients : ~3 KB réservés statiquement
-- stack task réseau : 2–4 KB selon usage, à définir
-- structures lwIP internes : hors contrôle direct
-- **total applicatif minimal : ~5–7 KB avant HTTP**
+## Public Configuration
 
-## Rejet
+Main constants are defined in `include/tcp_transport.h`.
 
-La bibliothèque ne maintient aucune queue applicative.
-Le rejet est applicatif : la bibliothèque accepte puis ferme immédiatement le fd au-delà du seuil.
-Le backlog TCP/lwIP existe toujours, mais il n'est pas utilisé comme mécanisme de régulation applicative.
+| Symbol | Default | Role |
+|---|---:|---|
+| `TCP_SERVER_MAX_CLIENTS` | `3` | Maximum number of static client slots |
+| `TCP_RX_BUFFER_SIZE` | `512` | Receive buffer size per client |
+| `TCP_TX_BUFFER_SIZE` | `512` | Transmit buffer size per client |
+| `TCP_SELECT_TIMEOUT_MS` | `100` | Wake-up timeout for the `select()` loop |
+| `TCP_IDLE_TIMEOUT_MS` | `5000` | Client idle timeout, `0` disables it |
 
-## État connexion
+Internal overrideable constants in `src/tcp_transport.c`:
 
-Lifecycle du slot — quatre états mutuellement exclusifs :
+| Symbol | Default | Role |
+|---|---:|---|
+| `TCP_NETWORK_TASK_STACK_SIZE` | `1024` | Network task stack, in FreeRTOS words |
+| `TCP_NETWORK_TASK_PRIORITY` | `5` | Network task priority |
+| `TCP_LISTEN_BACKLOG` | `TCP_SERVER_MAX_CLIENTS` | Backlog passed to `listen()` |
+| `TCP_TRANSPORT_STACK_CHECK` | `0` | Enables low stack watermark logging |
+| `TCP_ENABLE_REUSEADDR` | SDK-dependent | Enables `SO_REUSEADDR` when available |
+
+Any change to buffer sizes, stack size or client count must be measured on target hardware.
+
+## Memory Model
+
+The server uses one static global state:
+
+- one server socket descriptor;
+- global callbacks;
+- network task handle;
+- an array of `TCP_SERVER_MAX_CLIENTS` `tcp_conn_t` slots.
+
+Each client slot contains:
+
+- client fd;
+- RX buffer;
+- TX buffer;
+- RX/TX lengths and offsets;
+- last activity timestamp;
+- slot state;
+- `close_after_drain` flag.
+
+With default values, buffers account for about 3 KB for 3 clients, excluding slot structure overhead, FreeRTOS stack and internal lwIP memory.
+
+Real measurements must be documented in `docs/tcp_transport_memory_report.md`.
+
+## Connection Lifecycle
+
+| State | Meaning |
+|---|---|
+| `TCP_SLOT_FREE` | Available slot |
+| `TCP_SLOT_USED` | Active connection |
+| `TCP_SLOT_CLOSING` | Close in progress |
+| `TCP_SLOT_ERROR` | Error detected before close |
+
+Nominal flow:
+
+1. `accept()` creates a client fd.
+2. The fd is switched to non-blocking mode.
+3. A free slot is initialized.
+4. `on_connect` is called if defined.
+5. Receive events call `on_data`.
+6. TX data is sent progressively.
+7. Close calls `on_close` once.
+8. The slot returns to `TCP_SLOT_FREE`.
+
+When no slot is available, the client is accepted and immediately closed. The TCP/lwIP backlog is not used as an application-level regulation mechanism.
+
+## Callback Contract
 
 ```c
-typedef enum {
-    TCP_SLOT_FREE = 0,   /* slot disponible */
-    TCP_SLOT_USED,       /* connexion active */
-    TCP_SLOT_CLOSING,    /* fermeture en cours */
-    TCP_SLOT_ERROR       /* erreur, implique fermeture */
-} tcp_slot_state_t;
-```
-
-Logique buffer TX :
-```
-tx_offset < tx_len  → il reste des octets à envoyer
-tx_offset == tx_len → buffer TX vide, reset tx_len/tx_offset à 0
-```
-
-`tcp_send()` bufferise dans `tx_buf`, ne bloque pas, retourne le nombre d'octets acceptés.
-Les envois partiels sont repris à `tx_offset` sur le prochain passage dans la boucle `select()`.
-
-## Fermeture après vidage TX
-
-Le transport expose `tcp_close_after_drain()` pour permettre à une couche supérieure de demander la fermeture serveur après émission complète des données déjà bufferisées.
-
-Si le buffer TX est vide, la fermeture est immédiate.
-Si le buffer TX contient encore des données, le transport poursuit les envois partiels puis ferme automatiquement la connexion lorsque `tx_offset == tx_len`.
-
-Après appel à `tcp_close_after_drain()`, aucun nouvel envoi applicatif n'est accepté sur cette connexion : `tcp_send()` retourne `0`.
-
-## Thread-safety
-
-Les callbacks tournent dans la task réseau.
-`tcp_send()`, `tcp_close_after_drain()` et `tcp_close()` sont appelables uniquement depuis cette task en V1.
-Les appels cross-task sont hors V1 — ils passeront par une queue de commandes FreeRTOS si le besoin apparaît.
-
-## Contrat transport (interface minimale)
-
-Pas de vtable générique. Pas de polymorphisme dynamique.
-Séparation état par connexion / callbacks globaux :
-
-```c
-/* état par connexion — 1 slot par client */
-typedef struct {
-    int      fd;
-
-    uint8_t  rx_buf[512];
-    size_t   rx_len;
-
-    uint8_t  tx_buf[512];
-    size_t   tx_len;
-    size_t   tx_offset;
-
-    uint32_t last_activity_ms;
-    tcp_slot_state_t state;
-    bool close_after_drain;
-} tcp_conn_t;
-
-/* callbacks globaux — définis une fois à l'init */
 typedef struct {
     void (*on_connect)(tcp_conn_t *conn);
-    void (*on_data)   (tcp_conn_t *conn, const uint8_t *buf, size_t len);
-    void (*on_close)  (tcp_conn_t *conn);
-    void (*on_error)  (tcp_conn_t *conn, int err);
+    void (*on_data)(tcp_conn_t *conn, const uint8_t *buf, size_t len);
+    void (*on_close)(tcp_conn_t *conn);
+    void (*on_error)(tcp_conn_t *conn, int err);
 } tcp_server_callbacks_t;
 ```
 
-Opérations exposées :
-- `tcp_server_start(port, max_clients, callbacks)` — lie, écoute, configure non-bloquant, démarre la task interne
-- `tcp_server_stop()` — arrête la task, ferme tous les fds, libère les slots, retourne le statut d'arrêt
-- `tcp_send(tcp_conn_t *conn, buf, len)` — bufferise, envoi non-bloquant, retourne octets acceptés
-- `tcp_close_after_drain(tcp_conn_t *conn)` — ferme après vidage complet du TX déjà accepté
-- `tcp_close(tcp_conn_t *conn)` — fermeture propre, libère le slot
+Rules:
 
-Coût mémoire du module : à mesurer après compilation avec les flags projet.
+- callbacks run inside the internal network task;
+- callbacks must not block;
+- callbacks must not wait on slow resources;
+- callbacks must not perform long processing;
+- callbacks must not expose lwIP to the application layer.
 
-## Règle callback
+`on_error` is followed by connection close and `on_close`.
 
-Aucun callback ne doit bloquer.
-Aucun traitement long dans la couche transport.
-Le transport notifie, pousse les octets, ferme proprement, et reste minimal.
+## Function Catalogue
 
-## Règle de conception
+### `tcp_server_start`
 
-`http_server` ne doit pas exposer lwIP directement.
-Il doit dépendre du contrat transport ci-dessus : stable, borné RAM, réutilisable.
+```c
+int tcp_server_start(uint16_t port, uint8_t max_clients,
+                     const tcp_server_callbacks_t *callbacks);
+```
 
-## Finalité
+Starts the TCP server.
 
-Obtenir des briques personnelles cohérentes entre projets :
-- même modèle réseau
-- mêmes limites mémoire
-- mêmes timeouts
-- mêmes logs
-- mêmes erreurs
-- même comportement de service
+Parameters:
 
-## Conclusion
+- `port`: local TCP port. `0` is invalid.
+- `max_clients`: runtime client limit. Must be between `1` and `TCP_SERVER_MAX_CLIENTS`.
+- `callbacks`: optional pointer to application callbacks. `NULL` is accepted.
 
-Le transport est cadré :
-- sockets non-bloquants + select, task FreeRTOS interne
-- `TCP_SERVER_MAX_CLIENTS = 3` statique, `max_clients` runtime borné
-- slots clients statiques, lifecycle explicite : `FREE` / `USED` / `CLOSING` / `ERROR`
-- état par connexion séparé des callbacks globaux
-- buffers RX/TX bornés, envois partiels gérés par `tx_len` + `tx_offset`
-- rejet applicatif : `accept()` puis `close()` immédiat au-delà du seuil
-- backlog TCP/lwIP reconnu mais non utilisé comme régulation applicative
-- thread-safety V1 : tout dans la task réseau
-- coût mémoire à mesurer : slots (~3 KB) + stack task (2–4 KB) + overhead lwIP
-- contrat minimal en C pur, prêt à servir de base à `http_server`
+Behavior:
+
+- initializes slots;
+- creates the server socket;
+- binds to `INADDR_ANY:port`;
+- switches the server socket to non-blocking mode;
+- calls `listen()`;
+- starts the internal network task.
+
+Returns:
+
+| Code | Meaning |
+|---|---|
+| `TCP_TRANSPORT_OK` | Server started |
+| `TCP_TRANSPORT_ERR_INVALID_ARG` | Invalid port or client limit |
+| `TCP_TRANSPORT_ERR_ALREADY_STARTED` | Server already started |
+| `TCP_TRANSPORT_ERR_SOCKET` | Socket creation failed |
+| `TCP_TRANSPORT_ERR_BIND` | `bind()` failed |
+| `TCP_TRANSPORT_ERR_LISTEN` | `listen()` failed |
+| `TCP_TRANSPORT_ERR_NONBLOCK` | Non-blocking setup failed |
+| `TCP_TRANSPORT_ERR_TASK` | Task creation failed |
+
+### `tcp_server_stop`
+
+```c
+int tcp_server_stop(void);
+```
+
+Requests TCP server stop.
+
+Behavior:
+
+- ends the network loop;
+- closes all active clients;
+- closes the server socket;
+- restores internal state so the server can be started again.
+
+If called from the network task, the function requests stop and returns without waiting for task deletion.
+
+Returns:
+
+| Code | Meaning |
+|---|---|
+| `TCP_TRANSPORT_OK` | Server stopped or already stopped |
+| `TCP_TRANSPORT_ERR_STOP_TIMEOUT` | Network task did not confirm stop within the expected delay |
+
+### `tcp_send`
+
+```c
+size_t tcp_send(tcp_conn_t *conn, const uint8_t *buf, size_t len);
+```
+
+Copies bytes into the connection TX buffer.
+
+Parameters:
+
+- `conn`: active connection owned by the server.
+- `buf`: data to send.
+- `len`: requested byte count.
+
+Behavior:
+
+- does not block;
+- accepts only the available space in `tx_buf`;
+- returns the number of accepted bytes;
+- compacts the TX buffer if previous bytes have already been sent;
+- refuses new sends after `tcp_close_after_drain()`.
+
+Return:
+
+- `0` if the call is invalid, the buffer is full or no byte can be accepted;
+- `1..len` depending on available space.
+
+V1 constraint: callable only from the internal network task.
+
+### `tcp_close_after_drain`
+
+```c
+int tcp_close_after_drain(tcp_conn_t *conn);
+```
+
+Requests server-side close after all bytes already accepted in the TX buffer have been sent.
+
+Behavior:
+
+- closes immediately if TX is empty;
+- sets `close_after_drain` if TX still contains data;
+- refuses all later `tcp_send()` calls;
+- closes automatically when `tx_offset == tx_len`.
+
+Returns:
+
+| Code | Meaning |
+|---|---|
+| `TCP_TRANSPORT_OK` | Request accepted |
+| `TCP_TRANSPORT_ERR_INVALID_ARG` | Invalid connection or call outside the network task |
+
+V1 constraint: callable only from the internal network task.
+
+### `tcp_transport_close`
+
+```c
+void tcp_transport_close(tcp_conn_t *conn);
+```
+
+Immediately closes an active connection and frees its slot.
+
+Behavior:
+
+- closes the client fd;
+- calls `on_close` if applicable;
+- returns the slot to `TCP_SLOT_FREE`.
+
+Invalid calls are ignored.
+
+V1 constraint: callable only from the internal network task.
+
+### `tcp_close`
+
+```c
+static inline void tcp_close(tcp_conn_t *conn);
+```
+
+Public inline alias for `tcp_transport_close()`.
+
+Use `tcp_close()` in application code. `tcp_transport_close()` remains exposed to keep an explicit C symbol.
+
+## Return Codes
+
+```c
+typedef enum {
+    TCP_TRANSPORT_OK = 0,
+    TCP_TRANSPORT_ERR_INVALID_ARG = -1,
+    TCP_TRANSPORT_ERR_ALREADY_STARTED = -2,
+    TCP_TRANSPORT_ERR_SOCKET = -3,
+    TCP_TRANSPORT_ERR_BIND = -4,
+    TCP_TRANSPORT_ERR_LISTEN = -5,
+    TCP_TRANSPORT_ERR_NONBLOCK = -6,
+    TCP_TRANSPORT_ERR_TASK = -7,
+    TCP_TRANSPORT_ERR_STOP_TIMEOUT = -8
+} tcp_transport_result_t;
+```
+
+## Minimal Example
+
+```c
+static void on_data(tcp_conn_t *conn, const uint8_t *buf, size_t len)
+{
+    (void)tcp_send(conn, buf, len);
+}
+
+static tcp_server_callbacks_t callbacks = {
+    .on_data = on_data,
+};
+
+void app_start_tcp(void)
+{
+    int ret = tcp_server_start(7777, TCP_SERVER_MAX_CLIENTS, &callbacks);
+    if (ret != TCP_TRANSPORT_OK) {
+        /* handle startup error */
+    }
+}
+```
+
+## Validation
+
+Minimum expected validation:
+
+- PlatformIO build;
+- server start;
+- single client connection;
+- data receive;
+- transmit through `tcp_send()`;
+- remote close;
+- TX saturation;
+- excess client rejection;
+- server stop;
+- server restart;
+- heap and stack measurement on target.
+
+The detailed test plan is in `tests/tcp_transport_test_plan.md`.
+
+## Known Limits
+
+- No guaranteed cross-task API in V1.
+- No application queue.
+- No advanced backpressure.
+- Long callbacks delay every client.
+- Target memory measurements still need to be filled in the dedicated report.
