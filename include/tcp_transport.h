@@ -59,6 +59,8 @@ typedef struct tcp_conn {
 /* Callback contract:
  * - on_connect is called when a client is accepted.
  * - on_data is called for received data from the internal network task.
+ * - on_drain is called when tx_buf becomes empty after sending pending data.
+ *   It is not called when close_after_drain triggers the final close.
  * - on_error is called for socket errors and is always followed by on_close.
  * - on_close is called once for the final connection close after on_connect.
  * Callbacks run in the internal network task and must not block.
@@ -66,6 +68,7 @@ typedef struct tcp_conn {
 typedef struct {
     void (*on_connect)(tcp_conn_t *conn);
     void (*on_data)(tcp_conn_t *conn, const uint8_t *buf, size_t len);
+    void (*on_drain)(tcp_conn_t *conn);
     void (*on_close)(tcp_conn_t *conn);
     void (*on_error)(tcp_conn_t *conn, int err);
 } tcp_server_callbacks_t;
@@ -75,6 +78,8 @@ int tcp_server_start(uint16_t port, uint8_t max_clients,
 int tcp_server_stop(void);
 
 size_t tcp_send(tcp_conn_t *conn, const uint8_t *buf, size_t len);
+size_t tcp_tx_available(const tcp_conn_t *conn);
+bool tcp_tx_empty(const tcp_conn_t *conn);
 int tcp_close_after_drain(tcp_conn_t *conn);
 void tcp_transport_close(tcp_conn_t *conn);
 

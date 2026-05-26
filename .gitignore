@@ -7,3 +7,4 @@
 *.map
 platformio.local.ini
 examples/*/platformio.local.ini
+tmp/

@@ -1,6 +1,5 @@
 #include "tcp_transport.h"
 
-#include <errno.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
@@ -192,6 +191,11 @@ static void tcp_mark_tx_empty(tcp_conn_t *conn)
 
     if (conn->close_after_drain) {
         tcp_close_slot(conn, true);
+        return;
+    }
+
+    if (s_server.callbacks.on_drain != NULL) {
+        s_server.callbacks.on_drain(conn);
     }
 }
 
@@ -570,6 +574,27 @@ size_t tcp_send(tcp_conn_t *conn, const uint8_t *buf, size_t len)
     }
 
     return accepted;
+}
+
+size_t tcp_tx_available(const tcp_conn_t *conn)
+{
+    if (!tcp_conn_belongs_to_server(conn)
+        || conn->state != TCP_SLOT_USED
+        || conn->close_after_drain
+        || conn->tx_len >= sizeof(conn->tx_buf)) {
+        return 0;
+    }
+
+    return sizeof(conn->tx_buf) - conn->tx_len;
+}
+
+bool tcp_tx_empty(const tcp_conn_t *conn)
+{
+    if (!tcp_conn_belongs_to_server(conn) || conn->state != TCP_SLOT_USED) {
+        return true;
+    }
+
+    return conn->tx_offset >= conn->tx_len;
 }
 
 int tcp_close_after_drain(tcp_conn_t *conn)

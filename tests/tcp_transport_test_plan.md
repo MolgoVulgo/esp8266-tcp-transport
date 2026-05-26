@@ -81,6 +81,15 @@
     - Abruptly cut the client before it reads all data.
     - Expected: socket error logged, `on_error` called, fd closed, slot freed, network loop not blocked.
 
+16. TX drain callback for chunked response
+   - In `on_data`, queue first chunk with `tcp_send()`.
+   - Implement `on_drain` to queue next chunk while data remains, then call `tcp_close_after_drain()` for the final chunk.
+   - Expected: each chunk is sent in order, `on_drain` is called only after a non-empty TX buffer is fully drained, no `on_drain` after final drain-close.
+
+17. TX helper functions
+   - During callbacks, check `tcp_tx_available(conn)` and `tcp_tx_empty(conn)` before and after `tcp_send()`, during partial-drain, and after full drain.
+   - Expected: available decreases when bytes are accepted, returns to full size once drained, and `tcp_tx_empty()` reflects pending bytes state.
+
 ### Points to Observe
 
 - Logs for start, stop, accept, reject, socket errors and TX saturation.
@@ -169,6 +178,15 @@
     - Activer `close_after_drain` avec des donnees TX en attente.
     - Couper brutalement le client avant lecture complete.
     - Attendu : erreur socket loguee, `on_error` appele, fd ferme, slot libere, boucle reseau non bloquee.
+
+16. Callback de drainage TX pour reponse en morceaux
+   - Dans `on_data`, pousser un premier bloc via `tcp_send()`.
+   - Implementer `on_drain` pour pousser le bloc suivant tant qu'il reste des donnees, puis appeler `tcp_close_after_drain()` au dernier bloc.
+   - Attendu : blocs emis dans l'ordre, `on_drain` appele uniquement apres vidage d'un TX non vide, aucun `on_drain` apres fermeture finale par drain-close.
+
+17. Fonctions utilitaires TX
+   - Pendant les callbacks, verifier `tcp_tx_available(conn)` et `tcp_tx_empty(conn)` avant/apres `tcp_send()`, pendant un drain partiel, puis apres drain complet.
+   - Attendu : l'espace disponible diminue quand des octets sont acceptes, revient au maximum apres vidage, et `tcp_tx_empty()` reflete correctement l'etat d'attente.
 
 ### Points a observer
 
