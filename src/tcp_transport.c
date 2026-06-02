@@ -580,12 +580,20 @@ size_t tcp_tx_available(const tcp_conn_t *conn)
 {
     if (!tcp_conn_belongs_to_server(conn)
         || conn->state != TCP_SLOT_USED
-        || conn->close_after_drain
-        || conn->tx_len >= sizeof(conn->tx_buf)) {
+        || conn->close_after_drain) {
         return 0;
     }
 
-    return sizeof(conn->tx_buf) - conn->tx_len;
+    size_t pending = 0;
+    if (conn->tx_offset <= conn->tx_len) {
+        pending = conn->tx_len - conn->tx_offset;
+    }
+
+    if (pending >= sizeof(conn->tx_buf)) {
+        return 0;
+    }
+
+    return sizeof(conn->tx_buf) - pending;
 }
 
 bool tcp_tx_empty(const tcp_conn_t *conn)
@@ -605,12 +613,13 @@ int tcp_close_after_drain(tcp_conn_t *conn)
         return TCP_TRANSPORT_ERR_INVALID_ARG;
     }
 
+    conn->close_after_drain = true;
+
     if (conn->tx_offset >= conn->tx_len) {
-        tcp_mark_tx_empty(conn);
+        tcp_close_slot(conn, true);
         return TCP_TRANSPORT_OK;
     }
 
-    conn->close_after_drain = true;
     return TCP_TRANSPORT_OK;
 }
 

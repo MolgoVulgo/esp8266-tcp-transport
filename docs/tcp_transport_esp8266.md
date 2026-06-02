@@ -137,6 +137,7 @@ When no slot is available, the client is accepted and immediately closed. The TC
 typedef struct {
     void (*on_connect)(tcp_conn_t *conn);
     void (*on_data)(tcp_conn_t *conn, const uint8_t *buf, size_t len);
+    void (*on_drain)(tcp_conn_t *conn);
     void (*on_close)(tcp_conn_t *conn);
     void (*on_error)(tcp_conn_t *conn, int err);
 } tcp_server_callbacks_t;
@@ -149,6 +150,8 @@ Rules:
 - callbacks must not wait on slow resources;
 - callbacks must not perform long processing;
 - callbacks must not expose lwIP to the application layer.
+
+`on_drain(conn)` is called when the internal TX buffer becomes empty after sending previously accepted bytes. It is not called when `close_after_drain` triggers the final close. It may call `tcp_send()` to queue the next chunk.
 
 `on_error` is followed by connection close and `on_close`.
 
@@ -243,6 +246,22 @@ Return:
 - `1..len` depending on available space.
 
 V1 constraint: callable only from the internal network task.
+
+### TX helper functions
+
+```c
+size_t tcp_tx_available(const tcp_conn_t *conn);
+bool tcp_tx_empty(const tcp_conn_t *conn);
+```
+
+`tcp_tx_available(conn)`:
+- returns free space in the internal TX buffer;
+- accounts for bytes already sent using `tx_offset`;
+- returns `0` for invalid/closed connections or when `close_after_drain` is active.
+
+`tcp_tx_empty(conn)`:
+- returns `true` when no byte is pending for transmit;
+- returns `true` for invalid or unused connections.
 
 ### `tcp_close_after_drain`
 

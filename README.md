@@ -44,11 +44,19 @@ int tcp_server_start(uint16_t port, uint8_t max_clients,
 int tcp_server_stop(void);
 
 size_t tcp_send(tcp_conn_t *conn, const uint8_t *buf, size_t len);
+size_t tcp_tx_available(const tcp_conn_t *conn);
+bool tcp_tx_empty(const tcp_conn_t *conn);
 int tcp_close_after_drain(tcp_conn_t *conn);
 void tcp_close(tcp_conn_t *conn);
 ```
 
-`tcp_send()`, `tcp_close_after_drain()` and `tcp_close()` are V1 network-task-only APIs. In normal use they are called from `on_connect`, `on_data`, `on_close` or `on_error`.
+`tcp_send()`, `tcp_close_after_drain()` and `tcp_close()` are network-task-only APIs. In normal use they are called from `on_connect`, `on_data` or `on_drain`. `on_close` and `on_error` should stay short and should not start long application logic.
+
+`on_drain(conn)` means the internal TX buffer became empty after sending previously accepted bytes. It is not called when `close_after_drain` triggers the final close. It may call `tcp_send()` to queue the next chunk. It runs in the internal network task and must not block.
+
+TX helpers:
+- `tcp_tx_available(conn)` returns free space in the internal TX buffer, accounting for bytes already sent via `tx_offset`. It returns `0` for invalid connections, closed slots or when `close_after_drain` is active.
+- `tcp_tx_empty(conn)` returns `true` when no byte is pending for transmit. It also returns `true` for invalid or unused connections.
 
 Callbacks run inside the internal network task. They must not block, wait on slow resources or perform long processing.
 

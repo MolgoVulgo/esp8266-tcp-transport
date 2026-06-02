@@ -9,15 +9,30 @@
 extern "C" {
 #endif
 
+#ifndef TCP_SERVER_MAX_CLIENTS
 #define TCP_SERVER_MAX_CLIENTS      3U
+#endif
+
+#ifndef TCP_RX_BUFFER_SIZE
 #define TCP_RX_BUFFER_SIZE          512U
+#endif
+
+#ifndef TCP_TX_BUFFER_SIZE
 #define TCP_TX_BUFFER_SIZE          512U
+#endif
+
+#ifndef TCP_SELECT_TIMEOUT_MS
 #define TCP_SELECT_TIMEOUT_MS       100U
+#endif
 
 /* Idle timeout in milliseconds. Set to 0 to disable. */
 #ifndef TCP_IDLE_TIMEOUT_MS
 #define TCP_IDLE_TIMEOUT_MS         5000U
 #endif
+
+/* Public capability markers for client libraries. */
+#define TCP_TRANSPORT_HAS_ON_DRAIN          1
+#define TCP_TRANSPORT_HAS_CLOSE_AFTER_DRAIN 1
 
 typedef enum {
     TCP_SLOT_FREE = 0,
@@ -59,8 +74,10 @@ typedef struct tcp_conn {
 /* Callback contract:
  * - on_connect is called when a client is accepted.
  * - on_data is called for received data from the internal network task.
- * - on_drain is called when tx_buf becomes empty after sending pending data.
- *   It is not called when close_after_drain triggers the final close.
+ * - on_drain is called only when tx_buf becomes fully empty after sending
+ *   pending data. It is not called when close_after_drain triggers
+ *   the final close.
+ * - on_drain may call tcp_send() to continue a bounded streamed response.
  * - on_error is called for socket errors and is always followed by on_close.
  * - on_close is called once for the final connection close after on_connect.
  * Callbacks run in the internal network task and must not block.

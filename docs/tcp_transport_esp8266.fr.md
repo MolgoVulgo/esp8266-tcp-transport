@@ -137,6 +137,7 @@ Si aucun slot n'est disponible, le client est accepte puis ferme immediatement. 
 typedef struct {
     void (*on_connect)(tcp_conn_t *conn);
     void (*on_data)(tcp_conn_t *conn, const uint8_t *buf, size_t len);
+    void (*on_drain)(tcp_conn_t *conn);
     void (*on_close)(tcp_conn_t *conn);
     void (*on_error)(tcp_conn_t *conn, int err);
 } tcp_server_callbacks_t;
@@ -149,6 +150,8 @@ Regles :
 - ils ne doivent pas attendre une ressource lente ;
 - ils ne doivent pas contenir de traitement long ;
 - ils ne doivent pas exposer lwIP a la couche applicative.
+
+`on_drain(conn)` est appele quand le buffer TX interne devient vide apres envoi des octets precedemment acceptes. Il n'est pas appele si `close_after_drain` declenche la fermeture finale. Il peut appeler `tcp_send()` pour pousser le bloc suivant.
 
 `on_error` est suivi d'une fermeture de connexion et de `on_close`.
 
@@ -243,6 +246,22 @@ Retour :
 - `1..len` selon l'espace disponible.
 
 Contrainte V1 : appelable uniquement depuis la task reseau interne.
+
+### Fonctions utilitaires TX
+
+```c
+size_t tcp_tx_available(const tcp_conn_t *conn);
+bool tcp_tx_empty(const tcp_conn_t *conn);
+```
+
+`tcp_tx_available(conn)` :
+- retourne l'espace disponible dans le buffer TX interne ;
+- tient compte des octets deja emis via `tx_offset` ;
+- retourne `0` pour une connexion invalide/fermee ou si `close_after_drain` est actif.
+
+`tcp_tx_empty(conn)` :
+- retourne `true` si aucun octet n'est en attente d'emission ;
+- retourne `true` pour une connexion invalide ou non utilisee.
 
 ### `tcp_close_after_drain`
 

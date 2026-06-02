@@ -98,6 +98,22 @@
 - Free heap before start, after start, with 1 client and with 3 clients.
 - Network task stack high watermark if exposed by the project API.
 
+### Named Contract Checks
+
+- `test_tcp_tx_available_empty`: with empty TX (`tx_len = 0`, `tx_offset = 0`), expect `tcp_tx_available() == TCP_TX_BUFFER_SIZE`.
+- `test_tcp_tx_available_full`: with full pending TX, expect `tcp_tx_available() == 0`.
+- `test_tcp_tx_available_with_offset`: with `tx_len = 512`, `tx_offset = 256`, expect pending `256` and available `TCP_TX_BUFFER_SIZE - 256`.
+- `test_tcp_tx_empty_empty`: with empty TX, expect `tcp_tx_empty() == true`.
+- `test_tcp_tx_empty_pending`: with pending bytes (`tx_offset < tx_len`), expect `tcp_tx_empty() == false`.
+- `test_tcp_tx_empty_with_offset_equal_len`: with `tx_offset == tx_len`, expect `tcp_tx_empty() == true`.
+- `test_on_drain_called_after_tx_empty`: expect `on_drain` when TX transitions from pending to empty and connection stays open.
+- `test_on_drain_not_called_after_close_after_drain`: with `close_after_drain == true`, expect close on final drain and no `on_drain`.
+- `test_tcp_send_allowed_from_on_drain`: call `tcp_send()` from `on_drain`, expect accepted bytes when space is available.
+- `test_multiple_send_drain_cycles`: run several send->drain->send cycles, expect ordered delivery and stable callbacks.
+- `test_on_close_once_after_close_after_drain`: expect one `on_close` callback only.
+- `test_no_on_drain_after_close`: once closed, no later `on_drain` callback.
+- `test_on_drain_null_keeps_previous_behavior`: with `on_drain == NULL`, expect no callback side effect and normal TX close behavior.
+
 ## Francais
 
 ### Preconditions
@@ -195,3 +211,19 @@
 - Absence de traitement HTTP.
 - Heap libre avant demarrage, apres demarrage, avec 1 client et avec 3 clients.
 - Stack high watermark de la task reseau si l'API projet l'expose.
+
+### Verifications de contrat nommees
+
+- `test_tcp_tx_available_empty` : TX vide (`tx_len = 0`, `tx_offset = 0`), attendu `tcp_tx_available() == TCP_TX_BUFFER_SIZE`.
+- `test_tcp_tx_available_full` : TX en attente complet, attendu `tcp_tx_available() == 0`.
+- `test_tcp_tx_available_with_offset` : `tx_len = 512`, `tx_offset = 256`, attendu pending `256` et disponible `TCP_TX_BUFFER_SIZE - 256`.
+- `test_tcp_tx_empty_empty` : TX vide, attendu `tcp_tx_empty() == true`.
+- `test_tcp_tx_empty_pending` : octets en attente (`tx_offset < tx_len`), attendu `tcp_tx_empty() == false`.
+- `test_tcp_tx_empty_with_offset_equal_len` : `tx_offset == tx_len`, attendu `tcp_tx_empty() == true`.
+- `test_on_drain_called_after_tx_empty` : `on_drain` appele quand le TX passe de non vide a vide avec connexion ouverte.
+- `test_on_drain_not_called_after_close_after_drain` : avec `close_after_drain == true`, fermeture au vidage final et aucun `on_drain`.
+- `test_tcp_send_allowed_from_on_drain` : appel `tcp_send()` depuis `on_drain`, octets acceptes si place disponible.
+- `test_multiple_send_drain_cycles` : plusieurs cycles send->drain->send, emission ordonnee et callbacks stables.
+- `test_on_close_once_after_close_after_drain` : un seul appel `on_close`.
+- `test_no_on_drain_after_close` : apres fermeture, aucun `on_drain` ulterieur.
+- `test_on_drain_null_keeps_previous_behavior` : avec `on_drain == NULL`, pas d'effet de bord callback et comportement TX/fermeture normal.
