@@ -1,6 +1,6 @@
 # esp8266-tcp-transport
 
-`esp8266-tcp-transport` is a small PlatformIO library for ESP8266 RTOS SDK projects.
+`esp8266-tcp-transport` is a native ESP8266 RTOS SDK component for ESP8266 RTOS SDK projects.
 
 It provides a bounded TCP server transport layer for byte streams. It is intentionally independent from HTTP and application logic.
 
@@ -18,19 +18,13 @@ Not included: HTTP, TLS, WebSocket, UDP, IPv6, DNS, authentication, session mana
 
 ## Installation
 
-Add the library to a PlatformIO ESP8266 RTOS SDK project:
+Add the component to an ESP8266 RTOS SDK project under:
 
-```ini
-[env:esp12e]
-platform = espressif8266
-board = esp12e
-framework = esp8266-rtos-sdk
-
-lib_deps =
-  https://github.com/MolgoVulgo/esp8266-tcp-transport.git
+```text
+components/esp8266-tcp-transport
 ```
 
-Include the public header:
+Include the public header from the component:
 
 ```c
 #include "tcp_transport.h"
@@ -62,34 +56,29 @@ Callbacks run inside the internal network task. They must not block, wait on slo
 
 ## Example
 
-A complete TCP echo example is available in:
+A native ESP8266 RTOS SDK example app is available in:
 
 ```text
 examples/tcp_echo_server
 ```
 
-Configure Wi-Fi through build flags. Do not commit real credentials:
-
-```ini
-build_flags =
-  -D WIFI_SSID=\"your-ssid\"
-  -D WIFI_PASSWORD=\"your-password\"
-  -D TCP_ECHO_PORT=7777
-```
-
 Build the example:
 
 ```sh
-pio run -d examples/tcp_echo_server
+idf.py -C examples/tcp_echo_server build
 ```
 
-After flashing the ESP8266 and reading its IP address from the serial monitor:
+Flash from the same directory:
+
+```sh
+idf.py -C examples/tcp_echo_server flash monitor
+```
+
+Then test the echo server from a host once the device is reachable on the network:
 
 ```sh
 python3 examples/tcp_echo_server/tools/tcp_echo_client.py <esp8266-ip> 7777 "ping"
 ```
-
-Expected result: the client receives the same bytes it sent.
 
 ## Documentation
 
@@ -99,4 +88,4 @@ Expected result: the client receives the same bytes it sent.
 
 ## License
 
-No license is defined yet. The `license` field is intentionally absent from `library.json` until an explicit choice is made.
+No license is defined yet.

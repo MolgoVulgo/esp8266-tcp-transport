@@ -1,9 +1,16 @@
 #include "tcp_transport.h"
 
+#include <errno.h>
 #include <stdbool.h>
-#include <stdio.h>
 #include <string.h>
 #include <unistd.h>
+
+#if defined(ESP_PLATFORM)
+#include "esp_log.h"
+#include "lwip/errno.h"
+#else
+#include <stdio.h>
+#endif
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -37,16 +44,34 @@
 #endif
 #endif
 
-#ifndef pdMS_TO_TICKS
+#if !defined(ESP_PLATFORM) && !defined(pdMS_TO_TICKS)
 #define pdMS_TO_TICKS(ms) ((portTickType)(((ms) + portTICK_RATE_MS - 1U) / portTICK_RATE_MS))
 #endif
 
+#define TCP_TRANSPORT_LOG_TAG "tcp_transport"
+
 #ifndef TCP_TRANSPORT_LOGI
+#if defined(ESP_PLATFORM)
+#define TCP_TRANSPORT_LOGI(fmt, ...) ESP_LOGI(TCP_TRANSPORT_LOG_TAG, fmt, ##__VA_ARGS__)
+#else
 #define TCP_TRANSPORT_LOGI(fmt, ...) printf("[tcp_transport] " fmt "\n", ##__VA_ARGS__)
+#endif
 #endif
 
 #ifndef TCP_TRANSPORT_LOGE
+#if defined(ESP_PLATFORM)
+#define TCP_TRANSPORT_LOGE(fmt, ...) ESP_LOGE(TCP_TRANSPORT_LOG_TAG, fmt, ##__VA_ARGS__)
+#else
 #define TCP_TRANSPORT_LOGE(fmt, ...) printf("[tcp_transport][error] " fmt "\n", ##__VA_ARGS__)
+#endif
+#endif
+
+#if defined(ESP_PLATFORM)
+typedef TaskHandle_t tcp_task_handle_t;
+typedef BaseType_t tcp_task_create_result_t;
+#else
+typedef xTaskHandle tcp_task_handle_t;
+typedef portBASE_TYPE tcp_task_create_result_t;
 #endif
 
 typedef struct {
@@ -54,7 +79,7 @@ typedef struct {
     uint16_t port;
     uint8_t max_clients;
     tcp_server_callbacks_t callbacks;
-    xTaskHandle task_handle;
+    tcp_task_handle_t task_handle;
     volatile bool running;
     bool started;
     tcp_conn_t slots[TCP_SERVER_MAX_CLIENTS];
@@ -484,12 +509,12 @@ int tcp_server_start(uint16_t port, uint8_t max_clients,
     s_server.running = true;
     s_server.started = true;
 
-    portBASE_TYPE task_ret = xTaskCreate(tcp_network_task,
-                                         "tcp_transport",
-                                         TCP_NETWORK_TASK_STACK_SIZE,
-                                         NULL,
-                                         TCP_NETWORK_TASK_PRIORITY,
-                                         &s_server.task_handle);
+    tcp_task_create_result_t task_ret = xTaskCreate(tcp_network_task,
+                                                    "tcp_transport",
+                                                    TCP_NETWORK_TASK_STACK_SIZE,
+                                                    NULL,
+                                                    TCP_NETWORK_TASK_PRIORITY,
+                                                    &s_server.task_handle);
     if (task_ret != pdPASS) {
         TCP_TRANSPORT_LOGE("task create failed");
         s_server.running = false;

@@ -1,6 +1,6 @@
 # esp8266-tcp-transport
 
-`esp8266-tcp-transport` est une petite bibliotheque PlatformIO pour les projets ESP8266 RTOS SDK.
+`esp8266-tcp-transport` est un composant natif ESP8266 RTOS SDK pour les projets ESP8266 RTOS SDK.
 
 Elle fournit une couche de transport TCP serveur bornee pour flux d'octets. Elle reste volontairement independante de HTTP et de la logique applicative.
 
@@ -18,19 +18,13 @@ Non inclus : HTTP, TLS, WebSocket, UDP, IPv6, DNS, authentification, gestion de 
 
 ## Installation
 
-Ajouter la bibliotheque dans un projet PlatformIO ESP8266 RTOS SDK :
+Ajouter le composant dans un projet ESP8266 RTOS SDK sous :
 
-```ini
-[env:esp12e]
-platform = espressif8266
-board = esp12e
-framework = esp8266-rtos-sdk
-
-lib_deps =
-  https://github.com/MolgoVulgo/esp8266-tcp-transport.git
+```text
+components/esp8266-tcp-transport
 ```
 
-Inclure le header public :
+Inclure le header public du composant :
 
 ```c
 #include "tcp_transport.h"
@@ -62,34 +56,29 @@ Les callbacks s'executent dans la task reseau interne. Ils ne doivent pas bloque
 
 ## Exemple
 
-Un exemple complet de serveur echo TCP est disponible dans :
+Une application d'exemple native ESP8266 RTOS SDK est disponible dans :
 
 ```text
 examples/tcp_echo_server
 ```
 
-Configurer le Wi-Fi par flags de build. Ne pas commiter de vrais identifiants :
-
-```ini
-build_flags =
-  -D WIFI_SSID=\"your-ssid\"
-  -D WIFI_PASSWORD=\"your-password\"
-  -D TCP_ECHO_PORT=7777
-```
-
 Compiler l'exemple :
 
 ```sh
-pio run -d examples/tcp_echo_server
+idf.py -C examples/tcp_echo_server build
 ```
 
-Apres flash de l'ESP8266 et lecture de son adresse IP dans le moniteur serie :
+Flasher depuis le meme dossier :
+
+```sh
+idf.py -C examples/tcp_echo_server flash monitor
+```
+
+Puis tester l'echo depuis une machine hote une fois l'equipement joignable :
 
 ```sh
 python3 examples/tcp_echo_server/tools/tcp_echo_client.py <ip-esp8266> 7777 "ping"
 ```
-
-Resultat attendu : le client recoit les memes octets que ceux envoyes.
 
 ## Documentation
 
@@ -99,4 +88,4 @@ Resultat attendu : le client recoit les memes octets que ceux envoyes.
 
 ## Licence
 
-Aucune licence n'est encore definie. Le champ `license` est volontairement absent de `library.json` jusqu'a choix explicite.
+Aucune licence n'est encore definie.

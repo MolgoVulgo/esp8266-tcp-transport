@@ -2,7 +2,7 @@
 
 ## Objet
 
-`esp8266-tcp-transport` fournit une brique de transport TCP serveur pour ESP8266 RTOS SDK.
+`esp8266-tcp-transport` fournit un composant natif de transport TCP serveur pour ESP8266 RTOS SDK.
 
 Le module transporte des flux d'octets TCP. Il ne connait pas HTTP, les routes, les sessions, les contenus web ou la logique metier.
 
@@ -64,7 +64,7 @@ Hors perimetre :
 
 ## Configuration publique
 
-Les constantes principales sont definies dans `include/tcp_transport.h`.
+Les constantes principales sont definies dans `components/esp8266-tcp-transport/include/tcp_transport.h`.
 
 | Symbole | Valeur par defaut | Role |
 |---|---:|---|
@@ -74,7 +74,7 @@ Les constantes principales sont definies dans `include/tcp_transport.h`.
 | `TCP_SELECT_TIMEOUT_MS` | `100` | Timeout de reveil de la boucle `select()` |
 | `TCP_IDLE_TIMEOUT_MS` | `5000` | Timeout d'inactivite client, `0` pour desactiver |
 
-Les constantes internes surchargeables dans `src/tcp_transport.c` :
+Les constantes internes surchargeables dans `components/esp8266-tcp-transport/src/tcp_transport.c` :
 
 | Symbole | Valeur par defaut | Role |
 |---|---:|---|
@@ -356,7 +356,7 @@ void app_start_tcp(void)
 
 La validation minimale attendue :
 
-- compilation PlatformIO ;
+- compilation native ESP8266 RTOS SDK ;
 - demarrage serveur ;
 - connexion d'un client ;
 - reception de donnees ;
