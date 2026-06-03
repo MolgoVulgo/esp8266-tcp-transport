@@ -8,6 +8,14 @@ The firmware connects the ESP8266 as a Wi-Fi station, starts `esp8266-tcp-transp
 
 ### Configuration
 
+Create the local Wi-Fi credentials file from the template:
+
+```text
+cp main/wifi_credentials.example.h main/wifi_credentials.h
+```
+
+Then edit `main/wifi_credentials.h`.
+
 Override the port at build time if needed:
 
 ```sh
@@ -37,6 +45,14 @@ sent: 4 bytes
 received: ping
 ```
 
+Expected firmware logs include:
+
+```text
+wifi connected ip=...
+client accepted fd=... remote_port=...
+client closed reason=1 last_error=0
+```
+
 ## Francais
 
 Exemple natif ESP8266 RTOS SDK pour ESP8266 RTOS SDK.
@@ -44,6 +60,14 @@ Exemple natif ESP8266 RTOS SDK pour ESP8266 RTOS SDK.
 Le firmware connecte l'ESP8266 en Wi-Fi station, demarre `esp8266-tcp-transport` sur `TCP_ECHO_PORT`, puis renvoie chaque bloc TCP recu au client.
 
 ### Configuration
+
+Creer le fichier local d'identifiants Wi-Fi a partir du modele :
+
+```text
+cp main/wifi_credentials.example.h main/wifi_credentials.h
+```
+
+Puis editer `main/wifi_credentials.h`.
 
 Surcharger le port au build si necessaire :
 
@@ -72,4 +96,12 @@ Resultat attendu :
 ```text
 sent: 4 bytes
 received: ping
+```
+
+Logs firmware attendus :
+
+```text
+wifi connected ip=...
+client accepted fd=... remote_port=...
+client closed reason=1 last_error=0
 ```

@@ -12,6 +12,7 @@ Elle fournit une couche de transport TCP serveur bornee pour flux d'octets. Elle
 - Buffers RX et TX statiques par client.
 - Callbacks applicatifs courts pour connexion, reception, fermeture et erreur.
 - Emission bufferisee non bloquante avec gestion des envois partiels.
+- Diagnostic par connexion : port distant, raison de fermeture, derniere erreur socket.
 - Timeout d'inactivite optionnel via `TCP_IDLE_TIMEOUT_MS`.
 
 Non inclus : HTTP, TLS, WebSocket, UDP, IPv6, DNS, authentification, gestion de session ou queues applicatives.
@@ -27,7 +28,7 @@ Utiliser ce depot comme racine du composant dans un projet ESP8266 RTOS SDK, par
 Inclure le header public du composant :
 
 ```c
-#include "tcp_transport.h"
+#include "esp8266_tcp_transport.h"
 ```
 
 ## API minimale
@@ -46,6 +47,8 @@ void tcp_close(tcp_conn_t *conn);
 
 `tcp_send()`, `tcp_close_after_drain()` et `tcp_close()` sont des API utilisables uniquement depuis la task reseau interne. En usage normal, elles sont appelees depuis `on_connect`, `on_data` ou `on_drain`. `on_close` et `on_error` doivent rester courts et ne pas lancer de logique applicative longue.
 
+`on_close(conn, reason)` recoit la raison effective de fermeture. Pendant ce callback, `conn->remote_ip`, `conn->remote_port`, `conn->local_port` et `conn->last_error` restent disponibles pour le diagnostic.
+
 `on_drain(conn)` signifie que le buffer TX interne est devenu vide apres envoi des octets precedemment acceptes. Il n'est pas appele si `close_after_drain` declenche la fermeture finale. Il peut appeler `tcp_send()` pour pousser le bloc suivant. Il s'execute dans la task reseau interne et ne doit pas bloquer.
 
 Helpers TX :
@@ -60,6 +63,12 @@ Une application d'exemple native ESP8266 RTOS SDK est disponible dans :
 
 ```text
 examples/tcp_echo_server
+```
+
+L'exemple inclut une configuration Wi-Fi station minimale. Creer les credentials locaux a partir de :
+
+```text
+examples/tcp_echo_server/main/wifi_credentials.example.h
 ```
 
 Compiler l'exemple :
@@ -83,8 +92,10 @@ python3 examples/tcp_echo_server/tools/tcp_echo_client.py <ip-esp8266> 7777 "pin
 ## Documentation
 
 - [Documentation de reference](docs/tcp_transport_esp8266.fr.md)
+- [Migration 1.0.2 vers 2.0.0](docs/migration_1.0.2_to_2.0.0.md)
 - [Modele de rapport memoire](docs/tcp_transport_memory_report.md)
 - [Plan de test](tests/tcp_transport_test_plan.md)
+- [Changelog](CHANGELOG.md)
 
 ## Licence
 

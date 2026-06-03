@@ -12,6 +12,7 @@ It provides a bounded TCP server transport layer for byte streams. It is intenti
 - Static RX and TX buffers per client.
 - Short application callbacks for connection, data, close and error events.
 - Non-blocking buffered transmit with partial-send handling.
+- Per-connection diagnostics: remote port, close reason, last socket error.
 - Optional idle timeout through `TCP_IDLE_TIMEOUT_MS`.
 
 Not included: HTTP, TLS, WebSocket, UDP, IPv6, DNS, authentication, session management or application queues.
@@ -27,7 +28,7 @@ Use this repository as the component root in an ESP8266 RTOS SDK project, for ex
 Include the public header from the component:
 
 ```c
-#include "tcp_transport.h"
+#include "esp8266_tcp_transport.h"
 ```
 
 ## Minimal API
@@ -46,6 +47,8 @@ void tcp_close(tcp_conn_t *conn);
 
 `tcp_send()`, `tcp_close_after_drain()` and `tcp_close()` are network-task-only APIs. In normal use they are called from `on_connect`, `on_data` or `on_drain`. `on_close` and `on_error` should stay short and should not start long application logic.
 
+`on_close(conn, reason)` receives the effective close reason. During this callback `conn->remote_ip`, `conn->remote_port`, `conn->local_port` and `conn->last_error` remain available for diagnostics.
+
 `on_drain(conn)` means the internal TX buffer became empty after sending previously accepted bytes. It is not called when `close_after_drain` triggers the final close. It may call `tcp_send()` to queue the next chunk. It runs in the internal network task and must not block.
 
 TX helpers:
@@ -60,6 +63,12 @@ A native ESP8266 RTOS SDK example app is available in:
 
 ```text
 examples/tcp_echo_server
+```
+
+The example includes a minimal Wi-Fi station setup. Create local credentials from:
+
+```text
+examples/tcp_echo_server/main/wifi_credentials.example.h
 ```
 
 Build the example:
@@ -83,8 +92,10 @@ python3 examples/tcp_echo_server/tools/tcp_echo_client.py <esp8266-ip> 7777 "pin
 ## Documentation
 
 - [Reference documentation](docs/tcp_transport_esp8266.md)
+- [Migration 1.0.2 to 2.0.0](docs/migration_1.0.2_to_2.0.0.md)
 - [Memory report template](docs/tcp_transport_memory_report.md)
 - [Test plan](tests/tcp_transport_test_plan.md)
+- [Changelog](CHANGELOG.md)
 
 ## License
 

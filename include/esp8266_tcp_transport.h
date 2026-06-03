@@ -33,6 +33,10 @@ extern "C" {
 /* Public capability markers for client libraries. */
 #define TCP_TRANSPORT_HAS_ON_DRAIN          1
 #define TCP_TRANSPORT_HAS_CLOSE_AFTER_DRAIN 1
+#define TCP_TRANSPORT_HAS_TX_AVAILABLE      1
+#define TCP_TRANSPORT_HAS_REMOTE_ADDR       1
+#define TCP_TRANSPORT_HAS_CLOSE_REASON      1
+#define TCP_TRANSPORT_HAS_LAST_ERROR        1
 
 typedef enum {
     TCP_SLOT_FREE = 0,
@@ -53,11 +57,24 @@ typedef enum {
     TCP_TRANSPORT_ERR_STOP_TIMEOUT = -8
 } tcp_transport_result_t;
 
+typedef enum {
+    TCP_CLOSE_NONE = 0,
+    TCP_CLOSE_REMOTE,
+    TCP_CLOSE_LOCAL,
+    TCP_CLOSE_AFTER_DRAIN,
+    TCP_CLOSE_IDLE_TIMEOUT,
+    TCP_CLOSE_SOCKET_ERROR,
+    TCP_CLOSE_SERVER_STOP
+} tcp_close_reason_t;
+
 /* Exposed to callbacks for V1 diagnostics and bounded buffers.
  * Application code must not modify fields directly.
  */
 typedef struct tcp_conn {
     int fd;
+    uint32_t remote_ip;
+    uint16_t remote_port;
+    uint16_t local_port;
 
     uint8_t rx_buf[TCP_RX_BUFFER_SIZE];
     size_t rx_len;
@@ -68,6 +85,8 @@ typedef struct tcp_conn {
 
     uint32_t last_activity_ms;
     tcp_slot_state_t state;
+    tcp_close_reason_t close_reason;
+    int last_error;
     bool close_after_drain;
 } tcp_conn_t;
 
@@ -79,14 +98,15 @@ typedef struct tcp_conn {
  *   the final close.
  * - on_drain may call tcp_send() to continue a bounded streamed response.
  * - on_error is called for socket errors and is always followed by on_close.
- * - on_close is called once for the final connection close after on_connect.
+ * - on_close is called once for the final connection close after on_connect
+ *   and receives the effective close reason.
  * Callbacks run in the internal network task and must not block.
  */
 typedef struct {
     void (*on_connect)(tcp_conn_t *conn);
     void (*on_data)(tcp_conn_t *conn, const uint8_t *buf, size_t len);
     void (*on_drain)(tcp_conn_t *conn);
-    void (*on_close)(tcp_conn_t *conn);
+    void (*on_close)(tcp_conn_t *conn, tcp_close_reason_t reason);
     void (*on_error)(tcp_conn_t *conn, int err);
 } tcp_server_callbacks_t;
 

@@ -4,12 +4,12 @@
 
 ### Preconditions
 
-- Firmware built with `include/tcp_transport.h` and `src/tcp_transport.c`.
+- Firmware built with `include/esp8266_tcp_transport.h` and `src/esp8266_tcp_transport.c`.
 - Wi-Fi initialized before `tcp_server_start()`.
 - Test application providing short callbacks:
   - `on_connect`: fd log;
   - `on_data`: optional echo through `tcp_send()`;
-  - `on_close`: close log;
+  - `on_close`: close log with reason;
   - `on_error`: error log.
 
 ### Minimal Scenarios
@@ -118,12 +118,12 @@
 
 ### Preconditions
 
-- Firmware compile avec `include/tcp_transport.h` et `src/tcp_transport.c`.
+- Firmware compile avec `include/esp8266_tcp_transport.h` et `src/esp8266_tcp_transport.c`.
 - Wi-Fi initialise avant `tcp_server_start()`.
 - Application de test fournissant des callbacks courts :
   - `on_connect` : log du fd ;
   - `on_data` : echo optionnel via `tcp_send()` ;
-  - `on_close` : log de fermeture ;
+  - `on_close` : log de fermeture avec raison ;
   - `on_error` : log d'erreur.
 
 ### Scenarios minimaux

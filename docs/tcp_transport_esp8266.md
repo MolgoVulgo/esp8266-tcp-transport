@@ -64,7 +64,7 @@ Out of scope:
 
 ## Public Configuration
 
-Main constants are defined in `include/tcp_transport.h`.
+Main constants are defined in `include/esp8266_tcp_transport.h`.
 
 | Symbol | Default | Role |
 |---|---:|---|
@@ -74,7 +74,18 @@ Main constants are defined in `include/tcp_transport.h`.
 | `TCP_SELECT_TIMEOUT_MS` | `100` | Wake-up timeout for the `select()` loop |
 | `TCP_IDLE_TIMEOUT_MS` | `5000` | Client idle timeout, `0` disables it |
 
-Internal overrideable constants in `src/tcp_transport.c`:
+Public capability markers:
+
+| Symbol | Meaning |
+|---|---|
+| `TCP_TRANSPORT_HAS_ON_DRAIN` | `on_drain` callback is available |
+| `TCP_TRANSPORT_HAS_CLOSE_AFTER_DRAIN` | `tcp_close_after_drain()` is available |
+| `TCP_TRANSPORT_HAS_TX_AVAILABLE` | `tcp_tx_available()` is available |
+| `TCP_TRANSPORT_HAS_REMOTE_ADDR` | `tcp_conn_t` exposes remote/local endpoint fields |
+| `TCP_TRANSPORT_HAS_CLOSE_REASON` | `tcp_close_reason_t` and `on_close(..., reason)` are available |
+| `TCP_TRANSPORT_HAS_LAST_ERROR` | `tcp_conn_t.last_error` is available during close/error diagnostics |
+
+Internal overrideable constants in `src/esp8266_tcp_transport.c`:
 
 | Symbol | Default | Role |
 |---|---:|---|
@@ -98,11 +109,14 @@ The server uses one static global state:
 Each client slot contains:
 
 - client fd;
+- remote IP and port;
+- local port;
 - RX buffer;
 - TX buffer;
 - RX/TX lengths and offsets;
 - last activity timestamp;
 - slot state;
+- close reason and last socket error;
 - `close_after_drain` flag.
 
 With default values, buffers account for about 3 KB for 3 clients, excluding slot structure overhead, FreeRTOS stack and internal lwIP memory.
@@ -117,6 +131,18 @@ Real measurements must be documented in `docs/tcp_transport_memory_report.md`.
 | `TCP_SLOT_USED` | Active connection |
 | `TCP_SLOT_CLOSING` | Close in progress |
 | `TCP_SLOT_ERROR` | Error detected before close |
+
+Close reasons:
+
+| Reason | Meaning |
+|---|---|
+| `TCP_CLOSE_NONE` | No close reason recorded |
+| `TCP_CLOSE_REMOTE` | Peer closed the TCP connection |
+| `TCP_CLOSE_LOCAL` | Application called `tcp_close()` |
+| `TCP_CLOSE_AFTER_DRAIN` | Application requested close after TX drain |
+| `TCP_CLOSE_IDLE_TIMEOUT` | Idle timeout closed the connection |
+| `TCP_CLOSE_SOCKET_ERROR` | Non-retryable socket error closed the connection |
+| `TCP_CLOSE_SERVER_STOP` | Server shutdown closed the connection |
 
 Nominal flow:
 
@@ -138,7 +164,7 @@ typedef struct {
     void (*on_connect)(tcp_conn_t *conn);
     void (*on_data)(tcp_conn_t *conn, const uint8_t *buf, size_t len);
     void (*on_drain)(tcp_conn_t *conn);
-    void (*on_close)(tcp_conn_t *conn);
+    void (*on_close)(tcp_conn_t *conn, tcp_close_reason_t reason);
     void (*on_error)(tcp_conn_t *conn, int err);
 } tcp_server_callbacks_t;
 ```
@@ -154,6 +180,8 @@ Rules:
 `on_drain(conn)` is called when the internal TX buffer becomes empty after sending previously accepted bytes. It is not called when `close_after_drain` triggers the final close. It may call `tcp_send()` to queue the next chunk.
 
 `on_error` is followed by connection close and `on_close`.
+
+`on_close(conn, reason)` is called before the slot is reset. The callback may still inspect `conn->remote_ip`, `conn->remote_port`, `conn->local_port` and `conn->last_error`.
 
 ## Function Catalogue
 

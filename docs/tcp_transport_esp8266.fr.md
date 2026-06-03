@@ -64,7 +64,7 @@ Hors perimetre :
 
 ## Configuration publique
 
-Les constantes principales sont definies dans `include/tcp_transport.h`.
+Les constantes principales sont definies dans `include/esp8266_tcp_transport.h`.
 
 | Symbole | Valeur par defaut | Role |
 |---|---:|---|
@@ -74,7 +74,18 @@ Les constantes principales sont definies dans `include/tcp_transport.h`.
 | `TCP_SELECT_TIMEOUT_MS` | `100` | Timeout de reveil de la boucle `select()` |
 | `TCP_IDLE_TIMEOUT_MS` | `5000` | Timeout d'inactivite client, `0` pour desactiver |
 
-Les constantes internes surchargeables dans `src/tcp_transport.c` :
+Marqueurs publics de capacite :
+
+| Symbole | Signification |
+|---|---|
+| `TCP_TRANSPORT_HAS_ON_DRAIN` | le callback `on_drain` est disponible |
+| `TCP_TRANSPORT_HAS_CLOSE_AFTER_DRAIN` | `tcp_close_after_drain()` est disponible |
+| `TCP_TRANSPORT_HAS_TX_AVAILABLE` | `tcp_tx_available()` est disponible |
+| `TCP_TRANSPORT_HAS_REMOTE_ADDR` | `tcp_conn_t` expose les champs d'endpoint local/distant |
+| `TCP_TRANSPORT_HAS_CLOSE_REASON` | `tcp_close_reason_t` et `on_close(..., reason)` sont disponibles |
+| `TCP_TRANSPORT_HAS_LAST_ERROR` | `tcp_conn_t.last_error` est disponible pour le diagnostic |
+
+Les constantes internes surchargeables dans `src/esp8266_tcp_transport.c` :
 
 | Symbole | Valeur par defaut | Role |
 |---|---:|---|
@@ -98,11 +109,14 @@ Le serveur utilise un etat global statique :
 Chaque slot client contient :
 
 - le fd client ;
+- l'IP et le port distants ;
+- le port local ;
 - un buffer RX ;
 - un buffer TX ;
 - les longueurs et offsets TX/RX ;
 - le timestamp de derniere activite ;
 - l'etat du slot ;
+- la raison de fermeture et la derniere erreur socket ;
 - le flag `close_after_drain`.
 
 Avec les valeurs par defaut, les buffers representent environ 3 KB pour 3 clients, hors structure de slot, stack FreeRTOS et memoire interne lwIP.
@@ -117,6 +131,18 @@ Les mesures reelles doivent etre documentees dans `docs/tcp_transport_memory_rep
 | `TCP_SLOT_USED` | Connexion active |
 | `TCP_SLOT_CLOSING` | Fermeture en cours |
 | `TCP_SLOT_ERROR` | Erreur detectee avant fermeture |
+
+Raisons de fermeture :
+
+| Raison | Signification |
+|---|---|
+| `TCP_CLOSE_NONE` | aucune raison encore enregistree |
+| `TCP_CLOSE_REMOTE` | le pair a ferme la connexion TCP |
+| `TCP_CLOSE_LOCAL` | l'application a appele `tcp_close()` |
+| `TCP_CLOSE_AFTER_DRAIN` | l'application a demande la fermeture apres vidage TX |
+| `TCP_CLOSE_IDLE_TIMEOUT` | fermeture sur timeout d'inactivite |
+| `TCP_CLOSE_SOCKET_ERROR` | fermeture suite a une erreur socket non retryable |
+| `TCP_CLOSE_SERVER_STOP` | fermeture provoquee par l'arret du serveur |
 
 Flux nominal :
 
@@ -138,7 +164,7 @@ typedef struct {
     void (*on_connect)(tcp_conn_t *conn);
     void (*on_data)(tcp_conn_t *conn, const uint8_t *buf, size_t len);
     void (*on_drain)(tcp_conn_t *conn);
-    void (*on_close)(tcp_conn_t *conn);
+    void (*on_close)(tcp_conn_t *conn, tcp_close_reason_t reason);
     void (*on_error)(tcp_conn_t *conn, int err);
 } tcp_server_callbacks_t;
 ```
@@ -154,6 +180,8 @@ Regles :
 `on_drain(conn)` est appele quand le buffer TX interne devient vide apres envoi des octets precedemment acceptes. Il n'est pas appele si `close_after_drain` declenche la fermeture finale. Il peut appeler `tcp_send()` pour pousser le bloc suivant.
 
 `on_error` est suivi d'une fermeture de connexion et de `on_close`.
+
+`on_close(conn, reason)` est appele avant le reset du slot. Le callback peut encore lire `conn->remote_ip`, `conn->remote_port`, `conn->local_port` et `conn->last_error`.
 
 ## Recueil des fonctions
 
