@@ -18,10 +18,10 @@ Non inclus : HTTP, TLS, WebSocket, UDP, IPv6, DNS, authentification, gestion de 
 
 ## Installation
 
-Ajouter le composant dans un projet ESP8266 RTOS SDK sous :
+Utiliser ce depot comme racine du composant dans un projet ESP8266 RTOS SDK, par exemple sous :
 
 ```text
-components/esp8266-tcp-transport
+<projet>/components/esp8266-tcp-transport
 ```
 
 Inclure le header public du composant :

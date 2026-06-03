@@ -1,6 +1,10 @@
-cmake_minimum_required(VERSION 3.16)
-
-set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
-
-include($ENV{IDF_PATH}/tools/cmake/project.cmake)
-project(esp8266_tcp_transport_host)
+idf_component_register(
+    SRCS
+        "src/tcp_transport.c"
+    INCLUDE_DIRS
+        "include"
+    PRIV_REQUIRES
+        freertos
+        log
+        lwip
+)

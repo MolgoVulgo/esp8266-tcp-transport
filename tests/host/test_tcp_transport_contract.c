@@ -51,7 +51,7 @@ portBASE_TYPE xTaskCreate(void (*task_func)(void *), const char *name,
     return pdPASS;
 }
 
-#include "../../components/esp8266-tcp-transport/src/tcp_transport.c"
+#include "../../src/tcp_transport.c"
 
 static int g_on_drain_calls;
 static int g_on_close_calls;

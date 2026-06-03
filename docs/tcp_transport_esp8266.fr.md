@@ -64,7 +64,7 @@ Hors perimetre :
 
 ## Configuration publique
 
-Les constantes principales sont definies dans `components/esp8266-tcp-transport/include/tcp_transport.h`.
+Les constantes principales sont definies dans `include/tcp_transport.h`.
 
 | Symbole | Valeur par defaut | Role |
 |---|---:|---|
@@ -74,7 +74,7 @@ Les constantes principales sont definies dans `components/esp8266-tcp-transport/
 | `TCP_SELECT_TIMEOUT_MS` | `100` | Timeout de reveil de la boucle `select()` |
 | `TCP_IDLE_TIMEOUT_MS` | `5000` | Timeout d'inactivite client, `0` pour desactiver |
 
-Les constantes internes surchargeables dans `components/esp8266-tcp-transport/src/tcp_transport.c` :
+Les constantes internes surchargeables dans `src/tcp_transport.c` :
 
 | Symbole | Valeur par defaut | Role |
 |---|---:|---|
