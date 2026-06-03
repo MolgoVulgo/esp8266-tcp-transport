@@ -1,10 +1,10 @@
 .pio/
 .vscode/
+.codex/
+.agents/
 *.tar.gz
 *.zip
 *.bin
 *.elf
 *.map
-platformio.local.ini
-examples/*/platformio.local.ini
 tmp/

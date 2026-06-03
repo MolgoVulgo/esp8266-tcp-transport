@@ -1,0 +1,10 @@
+idf_component_register(
+    SRCS
+        "src/esp8266_tcp_transport.c"
+    INCLUDE_DIRS
+        "include"
+    PRIV_REQUIRES
+        freertos
+        log
+        lwip
+)

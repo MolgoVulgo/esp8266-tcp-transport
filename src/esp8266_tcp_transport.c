@@ -1,9 +1,16 @@
-#include "tcp_transport.h"
+#include "esp8266_tcp_transport.h"
 
+#include <errno.h>
 #include <stdbool.h>
-#include <stdio.h>
 #include <string.h>
 #include <unistd.h>
+
+#if defined(ESP_PLATFORM)
+#include "esp_log.h"
+#include "lwip/errno.h"
+#else
+#include <stdio.h>
+#endif
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -37,16 +44,34 @@
 #endif
 #endif
 
-#ifndef pdMS_TO_TICKS
+#if !defined(ESP_PLATFORM) && !defined(pdMS_TO_TICKS)
 #define pdMS_TO_TICKS(ms) ((portTickType)(((ms) + portTICK_RATE_MS - 1U) / portTICK_RATE_MS))
 #endif
 
+#define TCP_TRANSPORT_LOG_TAG "esp8266_tcp_transport"
+
 #ifndef TCP_TRANSPORT_LOGI
-#define TCP_TRANSPORT_LOGI(fmt, ...) printf("[tcp_transport] " fmt "\n", ##__VA_ARGS__)
+#if defined(ESP_PLATFORM)
+#define TCP_TRANSPORT_LOGI(fmt, ...) ESP_LOGI(TCP_TRANSPORT_LOG_TAG, fmt, ##__VA_ARGS__)
+#else
+#define TCP_TRANSPORT_LOGI(fmt, ...) printf("[esp8266_tcp_transport] " fmt "\n", ##__VA_ARGS__)
+#endif
 #endif
 
 #ifndef TCP_TRANSPORT_LOGE
-#define TCP_TRANSPORT_LOGE(fmt, ...) printf("[tcp_transport][error] " fmt "\n", ##__VA_ARGS__)
+#if defined(ESP_PLATFORM)
+#define TCP_TRANSPORT_LOGE(fmt, ...) ESP_LOGE(TCP_TRANSPORT_LOG_TAG, fmt, ##__VA_ARGS__)
+#else
+#define TCP_TRANSPORT_LOGE(fmt, ...) printf("[esp8266_tcp_transport][error] " fmt "\n", ##__VA_ARGS__)
+#endif
+#endif
+
+#if defined(ESP_PLATFORM)
+typedef TaskHandle_t tcp_task_handle_t;
+typedef BaseType_t tcp_task_create_result_t;
+#else
+typedef xTaskHandle tcp_task_handle_t;
+typedef portBASE_TYPE tcp_task_create_result_t;
 #endif
 
 typedef struct {
@@ -54,7 +79,7 @@ typedef struct {
     uint16_t port;
     uint8_t max_clients;
     tcp_server_callbacks_t callbacks;
-    xTaskHandle task_handle;
+    tcp_task_handle_t task_handle;
     volatile bool running;
     bool started;
     tcp_conn_t slots[TCP_SERVER_MAX_CLIENTS];
@@ -86,11 +111,16 @@ static void tcp_reset_slot(tcp_conn_t *conn)
     }
 
     conn->fd = -1;
+    conn->remote_ip = 0;
+    conn->remote_port = 0;
+    conn->local_port = 0;
     conn->rx_len = 0;
     conn->tx_len = 0;
     conn->tx_offset = 0;
     conn->last_activity_ms = 0;
     conn->state = TCP_SLOT_FREE;
+    conn->close_reason = TCP_CLOSE_NONE;
+    conn->last_error = 0;
     conn->close_after_drain = false;
 }
 
@@ -148,7 +178,8 @@ static void tcp_close_fd(int *fd)
     }
 }
 
-static void tcp_close_slot(tcp_conn_t *conn, bool notify_close)
+static void tcp_close_slot(tcp_conn_t *conn, bool notify_close,
+                           tcp_close_reason_t reason, int err)
 {
     if (!tcp_conn_belongs_to_server(conn)
         || conn->state == TCP_SLOT_FREE
@@ -158,11 +189,16 @@ static void tcp_close_slot(tcp_conn_t *conn, bool notify_close)
 
     int closed_fd = conn->fd;
     conn->state = TCP_SLOT_CLOSING;
+    conn->close_reason = reason;
+    conn->last_error = err;
     tcp_close_fd(&conn->fd);
-    TCP_TRANSPORT_LOGI("client closed fd=%d", closed_fd);
+    TCP_TRANSPORT_LOGI("client closed fd=%d reason=%d err=%d",
+                       closed_fd,
+                       (int)reason,
+                       err);
 
     if (notify_close && s_server.callbacks.on_close != NULL) {
-        s_server.callbacks.on_close(conn);
+        s_server.callbacks.on_close(conn, conn->close_reason);
     }
 
     tcp_reset_slot(conn);
@@ -175,13 +211,15 @@ static void tcp_fail_slot(tcp_conn_t *conn, int err)
     }
 
     conn->state = TCP_SLOT_ERROR;
+    conn->close_reason = TCP_CLOSE_SOCKET_ERROR;
+    conn->last_error = err;
     TCP_TRANSPORT_LOGE("client error fd=%d err=%d", conn->fd, err);
 
     if (s_server.callbacks.on_error != NULL) {
         s_server.callbacks.on_error(conn, err);
     }
 
-    tcp_close_slot(conn, true);
+    tcp_close_slot(conn, true, TCP_CLOSE_SOCKET_ERROR, err);
 }
 
 static void tcp_mark_tx_empty(tcp_conn_t *conn)
@@ -190,7 +228,7 @@ static void tcp_mark_tx_empty(tcp_conn_t *conn)
     conn->tx_offset = 0;
 
     if (conn->close_after_drain) {
-        tcp_close_slot(conn, true);
+        tcp_close_slot(conn, true, TCP_CLOSE_AFTER_DRAIN, 0);
         return;
     }
 
@@ -229,10 +267,15 @@ static void tcp_handle_accept(void)
 
     tcp_reset_slot(slot);
     slot->fd = client_fd;
+    slot->remote_ip = client_addr.sin_addr.s_addr;
+    slot->remote_port = ntohs(client_addr.sin_port);
+    slot->local_port = s_server.port;
     slot->state = TCP_SLOT_USED;
     slot->last_activity_ms = tcp_now_ms();
 
-    TCP_TRANSPORT_LOGI("client accepted fd=%d", client_fd);
+    TCP_TRANSPORT_LOGI("client accepted fd=%d remote_port=%u",
+                       client_fd,
+                       (unsigned)slot->remote_port);
 
     if (s_server.callbacks.on_connect != NULL) {
         s_server.callbacks.on_connect(slot);
@@ -254,7 +297,7 @@ static void tcp_handle_rx(tcp_conn_t *conn)
     }
 
     if (ret == 0) {
-        tcp_close_slot(conn, true);
+        tcp_close_slot(conn, true, TCP_CLOSE_REMOTE, 0);
         return;
     }
 
@@ -306,7 +349,7 @@ static void tcp_check_idle_clients(void)
 
         if ((uint32_t)(now - conn->last_activity_ms) >= TCP_IDLE_TIMEOUT_MS) {
             TCP_TRANSPORT_LOGI("client idle timeout fd=%d", conn->fd);
-            tcp_close_slot(conn, true);
+            tcp_close_slot(conn, true, TCP_CLOSE_IDLE_TIMEOUT, 0);
         }
     }
 #endif
@@ -315,7 +358,7 @@ static void tcp_check_idle_clients(void)
 static void tcp_close_all_clients(void)
 {
     for (uint8_t i = 0; i < TCP_SERVER_MAX_CLIENTS; ++i) {
-        tcp_close_slot(&s_server.slots[i], true);
+        tcp_close_slot(&s_server.slots[i], true, TCP_CLOSE_SERVER_STOP, 0);
     }
 }
 
@@ -484,12 +527,12 @@ int tcp_server_start(uint16_t port, uint8_t max_clients,
     s_server.running = true;
     s_server.started = true;
 
-    portBASE_TYPE task_ret = xTaskCreate(tcp_network_task,
-                                         "tcp_transport",
-                                         TCP_NETWORK_TASK_STACK_SIZE,
-                                         NULL,
-                                         TCP_NETWORK_TASK_PRIORITY,
-                                         &s_server.task_handle);
+    tcp_task_create_result_t task_ret = xTaskCreate(tcp_network_task,
+                                                    "esp_tcp_transport",
+                                                    TCP_NETWORK_TASK_STACK_SIZE,
+                                                    NULL,
+                                                    TCP_NETWORK_TASK_PRIORITY,
+                                                    &s_server.task_handle);
     if (task_ret != pdPASS) {
         TCP_TRANSPORT_LOGE("task create failed");
         s_server.running = false;
@@ -616,7 +659,7 @@ int tcp_close_after_drain(tcp_conn_t *conn)
     conn->close_after_drain = true;
 
     if (conn->tx_offset >= conn->tx_len) {
-        tcp_close_slot(conn, true);
+        tcp_close_slot(conn, true, TCP_CLOSE_AFTER_DRAIN, 0);
         return TCP_TRANSPORT_OK;
     }
 
@@ -629,5 +672,5 @@ void tcp_transport_close(tcp_conn_t *conn)
         return;
     }
 
-    tcp_close_slot(conn, true);
+    tcp_close_slot(conn, true, TCP_CLOSE_LOCAL, 0);
 }
